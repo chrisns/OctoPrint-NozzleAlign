@@ -202,3 +202,22 @@ def is_the_tip(nearest_mm, commanded_z, lens_z, tolerance_mm=4.0):
     150.8 mm, and one 10 mm step away it jumped to 167.6 mm.
     """
     return abs(tip_height(nearest_mm, lens_z) - float(commanded_z)) <= float(tolerance_mm)
+
+
+def agrees_across_repeats(readings, depth_spread_mm=3.0, pixel_spread_px=40.0):
+    """Whether repeated measurements at one spot describe the same thing.
+
+    A real feature repeats: same depth, same pixel. A lucky patch of noise does
+    not, and a single reading cannot tell the two apart. On this machine a lone
+    150.8 mm reading looked exactly like the nozzle tip, and five repeats at the
+    same spot returned 169 to 172 mm every time. Without repeats that noise
+    would have been reported as the answer.
+
+    ``readings`` is a sequence of ``(distance_mm, x, y)``.
+    """
+    if len(readings) < 3:
+        raise DepthError("need at least three readings to judge agreement")
+    values = np.asarray(readings, dtype=float)
+    return bool(values[:, 0].std() <= depth_spread_mm
+                and values[:, 1].std() <= pixel_spread_px
+                and values[:, 2].std() <= pixel_spread_px)

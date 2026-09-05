@@ -260,7 +260,26 @@ Hough circle transform and a right-angle prism, with a fixed 0.045 mm per pixel
 scale measured by hand in ImageJ. This plugin measures the scale instead, and
 covers XY only, because the camera looks straight up with no prism.
 
-## Status, 2026-09-05
+## Knowing when the answer is not the nozzle
+
+Two checks decide whether a reading may be believed, and both were added
+because the routine had already returned a confident wrong answer without them.
+
+**The height must match the commanded Z.** Z is defined as the height of the
+nozzle tip above the bed, so when the tip is the nearest thing the camera sees,
+it must measure back as Z. Everything else on the toolhead sits higher and reads
+further away. At Z150 the body reads 166 to 172 mm.
+
+**The reading must repeat.** A single measurement cannot tell a feature from a
+lucky patch of noise. One scan point returned 150.8 mm, which is exactly what a
+nozzle tip would read. Five repeats at that same point returned 170.8, 170.6,
+172.0, 169.4 and 171.9. The 150.8 was noise, and without repeats it would have
+been reported as the answer.
+
+Depth itself repeats to about 1 mm, so the measurement is precise. What it is
+measuring is simply not the tip.
+
+## Status, 2026-09-06
 
 Working and verified on the machine:
 

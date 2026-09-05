@@ -181,3 +181,29 @@ def test_the_check_works_at_any_height():
     for z in (150.0, 110.0, 80.0, 60.0):
         assert depth.is_the_tip(z - lens_z, z, lens_z)
         assert not depth.is_the_tip(z - lens_z + 17.0, z, lens_z)
+
+
+def test_repeats_separate_a_measurement_from_a_coincidence():
+    """One reading cannot tell a feature from a lucky patch of noise.
+
+    These are the five repeats the machine gave at X130 Y285, Z150. A single
+    earlier reading at the same spot said 150.8 mm, which is exactly what a
+    nozzle tip would read. It did not repeat.
+    """
+    steady = [(170.8, 800, 304), (170.6, 784, 382), (172.0, 800, 304),
+              (169.4, 786, 387), (171.9, 800, 306)]
+    assert depth.agrees_across_repeats(steady)
+    # the noisy spot from the same scan: same depth, but the pixel wanders
+    wandering = [(167.6, 908, 374), (168.8, 857, 286), (169.3, 652, 480),
+                 (166.3, 913, 430), (167.8, 615, 493)]
+    assert not depth.agrees_across_repeats(wandering)
+
+
+def test_a_single_reading_is_not_enough_to_judge():
+    with pytest.raises(depth.DepthError):
+        depth.agrees_across_repeats([(150.8, 460, 471)])
+
+
+def test_a_wandering_depth_is_rejected_too():
+    jumpy = [(150.0, 800, 300), (168.0, 802, 302), (151.0, 798, 301)]
+    assert not depth.agrees_across_repeats(jumpy)
