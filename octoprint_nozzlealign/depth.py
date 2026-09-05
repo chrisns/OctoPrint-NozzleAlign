@@ -88,7 +88,8 @@ def depths(rows, move_mm, focal_px, min_shift=0.3):
     return distance, speed
 
 
-def nearest_region(rows, distance, response_floor=0.35, take=8):
+def nearest_region(rows, distance, response_floor=0.35, take=8, radius=140.0,
+                   band=0.08):
     """Where the nearest confident patches sit, and how far away they are.
 
     Low confidence patches throw wild distances, so they are excluded before
@@ -111,11 +112,39 @@ def nearest_region(rows, distance, response_floor=0.35, take=8):
             "only %d confident patches; the bed move may be too small or the "
             "picture too flat" % int(keep.sum()))
     kept_rows, kept_distance = rows[keep], distance[keep]
-    order = np.argsort(kept_distance)[:take]
-    points = kept_rows[order][:, :2]
-    weights = kept_rows[order][:, 4]
-    centre = np.average(points, axis=0, weights=weights)
-    return (float(centre[0]), float(centre[1])), float(kept_distance[order].min()), int(keep.sum())
+
+    # Only patches at genuinely the nearest depth are candidates. Clustering
+    # first and depth second would let a large far group outvote the near one
+    # simply by having more members.
+    closest = float(kept_distance.min())
+    at_front = kept_distance <= closest * (1.0 + band)
+    front_rows = kept_rows[at_front]
+    front_distance = kept_distance[at_front]
+    order = np.argsort(front_distance)[:take]
+    points = front_rows[order][:, :2]
+    weights = front_rows[order][:, 4]
+
+    # Even at one depth the nearest patches are not always one place. A toolhead
+    # can present two low regions, and averaging across both lands the answer in
+    # the gap between them, which is on neither. Worse, which group wins flips
+    # as the toolhead moves, so a loop steering on that average oscillates
+    # instead of converging. Take the heaviest group and ignore the rest.
+    group = _tightest_group(points, weights, radius)
+    centre = np.average(points[group], axis=0, weights=weights[group])
+    return ((float(centre[0]), float(centre[1])),
+            float(front_distance[order][group].min()), int(keep.sum()))
+
+
+def _tightest_group(points, weights, radius):
+    """Indices of the heaviest cluster of points within ``radius`` of each other."""
+    best, best_weight = None, -1.0
+    for index in range(len(points)):
+        near = np.hypot(points[:, 0] - points[index, 0],
+                        points[:, 1] - points[index, 1]) <= radius
+        total = float(weights[near].sum())
+        if total > best_weight:
+            best, best_weight = near, total
+    return best
 
 
 def focal_from_scale(px_per_mm, distance_mm):

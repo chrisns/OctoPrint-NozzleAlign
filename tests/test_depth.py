@@ -24,7 +24,7 @@ def scene_pair(near_shift, far_shift, size=(600, 900)):
     near = cv2.resize(rng.normal(90.0, 55.0, (200, 300)).astype(np.float32),
                       (width, height), interpolation=cv2.INTER_CUBIC)
     mask = np.zeros((height, width), dtype=np.float32)
-    mask[120:540, 260:680] = 1.0
+    mask[60:560, 220:760] = 1.0
 
     def shift(image, dx):
         matrix = np.float32([[1, 0, dx], [0, 1, 0]])
@@ -49,8 +49,8 @@ def test_near_things_shift_more_and_read_as_nearer():
     centre, nearest, confident = depth.nearest_region(rows, distance)
     assert nearest == pytest.approx(near_d, rel=0.15)
     # the nearest patches must sit on the near object, not on the background
-    assert 260 < centre[0] < 680
-    assert 120 < centre[1] < 540
+    assert 220 < centre[0] < 760
+    assert 60 < centre[1] < 560
 
 
 def test_a_flat_picture_is_refused_rather_than_guessed():
@@ -110,3 +110,40 @@ def test_lens_plane_needs_more_than_one_height():
 def test_focal_round_trips():
     focal = depth.focal_from_scale(8.65, 154.8)
     assert depth.scale_at(focal, 154.8) == pytest.approx(8.65)
+
+
+def test_two_separate_low_regions_do_not_average_into_the_gap():
+    """A toolhead can show two low regions, and the answer must pick one.
+
+    Averaging across both lands the answer between them, on neither, and which
+    group happens to be nearest flips as the toolhead moves. A loop steering on
+    that average oscillates instead of converging, which is exactly what the
+    machine did before this was fixed.
+    """
+    rows = np.array([
+        # a tight group of four on the left, all confident
+        [200.0, 400.0, 17.3, 0.0, 0.95],
+        [240.0, 400.0, 17.3, 0.0, 0.94],
+        [200.0, 440.0, 17.2, 0.0, 0.93],
+        [240.0, 440.0, 17.2, 0.0, 0.92],
+        # a looser pair 700 px away at almost the same depth
+        [940.0, 300.0, 17.25, 0.0, 0.90],
+        [980.0, 300.0, 17.15, 0.0, 0.89],
+    ])
+    distance, _ = depth.depths(rows, 2.0, 1339.0)
+    centre, nearest, _ = depth.nearest_region(rows, distance)
+    # the answer must sit on the heavier left group, not midway between the two
+    assert 180 < centre[0] < 260
+    assert 380 < centre[1] < 460
+
+
+def test_a_single_group_is_unaffected():
+    rows = np.array([
+        [600.0, 500.0, 17.3, 0.0, 0.95],
+        [640.0, 500.0, 17.2, 0.0, 0.94],
+        [600.0, 540.0, 17.25, 0.0, 0.93],
+    ])
+    distance, _ = depth.depths(rows, 2.0, 1339.0)
+    centre, _, _ = depth.nearest_region(rows, distance)
+    assert centre[0] == pytest.approx(613.0, abs=15)
+    assert centre[1] == pytest.approx(513.0, abs=15)
