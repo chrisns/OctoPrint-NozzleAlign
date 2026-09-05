@@ -9,10 +9,20 @@ The camera is the Printables model
 Klipper and Axiscope and ships no software. This repository is the Marlin and
 OctoPrint side.
 
-## Nothing is measured by hand
+## Put the camera anywhere and press one button
 
 You give the plugin no coordinates, no pixel scale and no camera orientation. It
-measures all three.
+measures all of them, on every run.
+
+Nothing about the camera is remembered between runs. The position, the focus
+height, the pixel scale and the camera rotation are measured afresh each time.
+Move the camera, or put it down somewhere else, and just run it again. No
+setting changes.
+
+A remembered position would be worse than useless. The routine lowers the nozzle
+onto the camera, so a stale height would drive it into a camera that is no
+longer there. The settings do show the last position found, but nothing reads
+those values back to drive the machine.
 
 ### The pixel map
 
@@ -64,9 +74,13 @@ picture shifted. That is what lets the search steer from a long way off.
 "Find the camera" on the Nozzle Align tab does this.
 
 1. Home, then rise to the search height.
-2. Try the bed centre, then a widening grid, nudging at each point until the
-   camera sees the machine move.
-3. Steer the toolhead to the image centre. This is coarse: it works on the whole
+2. Sweep the whole bed, one frame per point. Every frame shares the same static
+   background and the toolhead appears in only a few of them, so the per-pixel
+   median across the sweep is the empty view. Scoring each frame against that
+   median needs no parking position and no reference shot. The cut comes from
+   the spread of the sweep itself, so it does not depend on the lens or the
+   lighting.
+3. Measure at the best few spots, then steer the toolhead to the image centre. This is coarse: it works on the whole
    toolhead, because at that range the nozzle has not separated yet.
 4. Step down, re-measuring and re-centring at each height. As the view narrows,
    the nozzle separates and the measurement becomes fine.

@@ -25,10 +25,16 @@ def discovery_config(**overrides):
         motion_min_coverage=0.5,
         motion_probe_mm=0.6,
         search_z=80.0,
-        search_centre_x=160.0,
-        search_centre_y=175.0,
-        search_span_mm=120.0,
-        search_points=3,
+        search_x_min=25.0,
+        search_x_max=295.0,
+        search_y_min=25.0,
+        search_y_max=325.0,
+        raster_spacing_x=70.0,
+        raster_spacing_y=45.0,
+        raster_frame_average=2,
+        raster_thumb_px=320,
+        sweep_score_sigma=3.0,
+        sweep_tries=4,
         search_probe_mm=3.0,
         coarse_step=10.0,
         fine_step=2.0,
@@ -334,3 +340,50 @@ def test_discovery_says_so_when_the_nozzle_never_separates(monkeypatch):
     with pytest.raises(discovery.CalibrationError) as caught:
         job._execute()
     assert "never separated" in str(caught.value)
+
+
+# -- the whole job, camera position included --------------------------------
+
+
+@pytest.mark.parametrize("camera_xy", [(162.4, 171.8), (58.0, 305.0), (271.0, 44.0)])
+def test_full_calibration_from_scratch_wherever_the_camera_sits(monkeypatch, camera_xy):
+    """Put the camera anywhere on the bed and press one button.
+
+    Nothing about the camera is remembered between runs, so this test hands the
+    routine no coordinates at all and moves the camera between cases.
+    """
+    error = (0.37, -0.29)
+    bridge = FakeBridge(tool_error=error)
+    camera = PerspectiveCamera(
+        bridge, camera_xy, lens_z=LENS_Z, focus_z=FOCUS_Z, rotation=23.0
+    )
+    monkeypatch.setattr(
+        vision, "average_frames",
+        lambda url, count=1, timeout=1.0, settle=0: camera.frame(),
+    )
+    config = discovery_config(camera_x=None, camera_y=None, camera_z=None)
+    job = discovery.FullCalibration(bridge, config, Recorder(), NullLogger())
+    result = job._execute()
+
+    assert result["camera"]["camera_x"] == pytest.approx(camera_xy[0], abs=0.5)
+    assert result["camera"]["camera_y"] == pytest.approx(camera_xy[1], abs=0.5)
+    assert result["correction"] == pytest.approx([-error[0], -error[1]], abs=0.03)
+
+
+def test_full_calibration_ignores_a_stale_stored_position(monkeypatch):
+    """A camera that has been moved must not be looked for where it used to be."""
+    error = (0.2, 0.15)
+    actual = (240.0, 90.0)
+    bridge = FakeBridge(tool_error=error)
+    camera = PerspectiveCamera(bridge, actual, lens_z=LENS_Z, focus_z=FOCUS_Z)
+    monkeypatch.setattr(
+        vision, "average_frames",
+        lambda url, count=1, timeout=1.0, settle=0: camera.frame(),
+    )
+    # the settings still hold where the camera used to be, and a wrong height
+    stale = discovery_config(camera_x=60.0, camera_y=300.0, camera_z=FOCUS_Z - 12.0)
+    job = discovery.FullCalibration(bridge, stale, Recorder(), NullLogger())
+    result = job._execute()
+    assert result["camera"]["camera_x"] == pytest.approx(actual[0], abs=0.5)
+    assert result["camera"]["camera_y"] == pytest.approx(actual[1], abs=0.5)
+    assert result["correction"] == pytest.approx([-error[0], -error[1]], abs=0.03)

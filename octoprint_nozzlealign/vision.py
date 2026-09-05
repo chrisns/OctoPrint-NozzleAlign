@@ -470,6 +470,42 @@ def _masked_mean(frame, mask):
     return float(values.mean())
 
 
+def thumbnail(frame, width=320):
+    """Shrink a frame, which is all the bed sweep needs and keeps memory small."""
+    _require_cv2()
+    height = max(1, int(round(frame.shape[0] * width / float(frame.shape[1]))))
+    return cv2.resize(
+        np.asarray(frame, dtype=np.float32), (int(width), height),
+        interpolation=cv2.INTER_AREA,
+    )
+
+
+def score_against_median(frames, centre_weight=0.6):
+    """Score each frame by how much it differs from the median of them all.
+
+    Every frame of a bed sweep shares the same static background, and the
+    toolhead only appears in a few of them, so the per-pixel median across the
+    sweep is the empty view.  No parking position and no reference shot are
+    needed.
+
+    The score is weighted towards the middle of the image, because the aim is to
+    end up over the camera rather than merely somewhere in its field of view.
+    """
+    if not frames:
+        return []
+    stack = np.stack([np.asarray(f, dtype=np.float32) for f in frames])
+    background = np.median(stack, axis=0)
+    height, width = background.shape
+    ys, xs = np.mgrid[0:height, 0:width]
+    radius = np.hypot(
+        (xs - width / 2.0) / (width / 2.0), (ys - height / 2.0) / (height / 2.0)
+    )
+    weight = np.exp(-(radius ** 2) / (2.0 * max(centre_weight, 1e-3) ** 2))
+    weight /= weight.sum()
+    difference = np.abs(stack - background)
+    return [float((difference[i] * weight).sum()) for i in range(len(frames))]
+
+
 def sharpness(frame, centre=None, size=200):
     """Variance of the Laplacian, which peaks when the image is in focus."""
     _require_cv2()

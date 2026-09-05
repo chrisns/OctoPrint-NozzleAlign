@@ -49,27 +49,83 @@ class DiscoveryRoutine(CalibrationRoutine):
 
     # -- search -----------------------------------------------------------
 
-    def _search_for_the_nozzle(self, distance):
-        """Try the bed centre, then a widening grid, until the nozzle shows up."""
+    def _raster_points(self):
+        """Serpentine sweep of the whole bed, so the camera can be anywhere."""
         cfg = self._cfg
-        span = float(cfg["search_span_mm"])
-        points = int(cfg["search_points"])
-        centre = (float(cfg["search_centre_x"]), float(cfg["search_centre_y"]))
+        x0, x1 = float(cfg["search_x_min"]), float(cfg["search_x_max"])
+        y0, y1 = float(cfg["search_y_min"]), float(cfg["search_y_max"])
+        step_x = max(5.0, float(cfg["raster_spacing_x"]))
+        step_y = max(5.0, float(cfg["raster_spacing_y"]))
+        columns = _span(x0, x1, step_x)
+        rows = _span(y0, y1, step_y)
+        points = []
+        for index, y in enumerate(rows):
+            ordered = columns if index % 2 == 0 else list(reversed(columns))
+            points += [(x, y) for x in ordered]
+        return points
 
-        offsets = [(0.0, 0.0)]
-        if points > 1:
-            step = span / float(points - 1)
-            grid = [-span / 2.0 + step * i for i in range(points)]
-            offsets += [(x, y) for y in grid for x in grid if (x, y) != (0.0, 0.0)]
+    def _sweep_for_the_camera(self):
+        """Sweep the bed and pick the spot where the camera can see the toolhead.
+
+        The background is the same in every frame of the sweep, and the toolhead
+        appears in only a few of them, so the per-pixel median across the sweep
+        is the empty view.  Scoring each frame against that median needs no
+        parking position and no reference shot.  The score is weighted towards
+        the middle of the image, because the aim is to end up over the camera
+        rather than merely somewhere in its field of view.
+        """
+        cfg = self._cfg
+        points = self._raster_points()
+        frames = []
+        for index, (x, y) in enumerate(points):
+            self._check_abort()
+            self._progress(
+                "sweep",
+                "sweeping the bed, point %d of %d at X%.0f Y%.0f"
+                % (index + 1, len(points), x, y),
+            )
+            self._move_absolute(x=x, y=y)
+            frame = vision.average_frames(
+                cfg["snapshot_url"],
+                count=int(cfg["raster_frame_average"]),
+                timeout=float(cfg["http_timeout"]),
+            )
+            frames.append(vision.thumbnail(frame, int(cfg["raster_thumb_px"])))
+
+        scores = vision.score_against_median(frames)
+        # An absolute threshold would depend on the lens, the lighting and the
+        # thumbnail size, so the cut is taken from the spread of the sweep
+        # itself: a point counts when it stands out from the rest of the sweep.
+        array = np.asarray(scores, dtype=float)
+        baseline = float(np.median(array))
+        spread = float(np.median(np.abs(array - baseline))) * 1.4826
+        cut = baseline + float(cfg["sweep_score_sigma"]) * max(spread, 1e-9)
+        ranked = sorted(range(len(points)), key=lambda i: -scores[i])
+        best = ranked[0]
+        self._progress(
+            "sweep",
+            "the camera sees the toolhead best at X%.0f Y%.0f "
+            "(score %.4f, background %.4f, cut %.4f)"
+            % (points[best][0], points[best][1], scores[best], baseline, cut),
+        )
+        return [points[i] for i in ranked if scores[i] > cut]
+
+    def _search_for_the_nozzle(self, distance):
+        """Sweep the bed, then measure at the most promising spots in turn."""
+        candidates = self._sweep_for_the_camera()
+        if not candidates:
+            raise CalibrationError(
+                "could not see the nozzle: the toolhead changed the picture "
+                "nowhere on the bed. Check that the camera is plugged in, "
+                "points up, and that its stream is live"
+            )
 
         last_error = None
-        for index, (dx, dy) in enumerate(offsets):
+        for index, (x, y) in enumerate(candidates[: int(self._cfg["sweep_tries"])]):
             self._check_abort()
-            x, y = centre[0] + dx, centre[1] + dy
             self._progress(
                 "search",
-                "looking for the nozzle at X%.1f Y%.1f (%d of %d)"
-                % (x, y, index + 1, len(offsets)),
+                "measuring at X%.1f Y%.1f (candidate %d)" % (x, y, index + 1),
             )
             self._move_absolute(x=x, y=y)
             try:
@@ -87,8 +143,8 @@ class DiscoveryRoutine(CalibrationRoutine):
             )
             return matrix, origin
         raise CalibrationError(
-            "could not see the nozzle move anywhere in the search area (%s); "
-            "check that the camera points up at the toolhead" % last_error
+            "the sweep found the camera but no move could be measured there "
+            "(%s); check that the camera is in focus" % last_error
         )
 
     def _centre_here(self, matrix, target, distance, label):
@@ -217,7 +273,16 @@ class DiscoveryRoutine(CalibrationRoutine):
                     )
                     break
 
-                self._centre_here(matrix, target, distance, "Z%.1f" % z)
+                try:
+                    self._centre_here(matrix, target, distance, "Z%.1f" % z)
+                except CalibrationError as exception:
+                    # A nonsense correction here means the measurement is not
+                    # tracking the nozzle. Stop descending rather than abort, so
+                    # the caller still hears why the run produced nothing.
+                    self._progress(
+                        "descend", "stopping the descent at Z%.2f: %s" % (z, exception)
+                    )
+                    break
                 frame = self._frame()
                 probe = self._motion_probe(dx=distance)
                 origin = probe["position"]
@@ -265,6 +330,14 @@ class DiscoveryRoutine(CalibrationRoutine):
         return best
 
 
+def _span(low, high, step):
+    """Points from low to high inclusive, at most ``step`` apart."""
+    if high <= low:
+        return [low]
+    count = int(np.ceil((high - low) / step))
+    return [low + (high - low) * i / count for i in range(count + 1)]
+
+
 def estimate_lens_z(samples):
     """Estimate the Z of the lens plane from how the image scale grows.
 
@@ -283,3 +356,38 @@ def estimate_lens_z(samples):
     if abs(slope) < 1e-9:
         return None
     return float(-intercept / slope)
+
+
+class FullCalibration(DiscoveryRoutine):
+    """Find the camera, then measure the offset, in one go.
+
+    Nothing about the camera is remembered between runs.  The position, the
+    focus height, the pixel scale and the camera rotation are all measured
+    afresh every time, so the camera can be put anywhere on the bed and moved
+    whenever you like.  A stored position would be worse than useless here: the
+    routine lowers the nozzle onto the camera, and a stale Z would drive it into
+    a camera that is no longer there.
+    """
+
+    def __init__(self, bridge, settings, notify, logger, on_result=None):
+        super(FullCalibration, self).__init__(
+            bridge, settings, notify, logger, on_result=on_result
+        )
+        self.name = "nozzlealign-calibration"
+
+    def _execute(self):
+        found = DiscoveryRoutine._execute(self)
+        self._cfg = dict(self._cfg)
+        self._cfg.update(
+            camera_x=found["camera_x"],
+            camera_y=found["camera_y"],
+            camera_z=found["camera_z"],
+            home_first=False,
+        )
+        self._progress(
+            "measure",
+            "camera found; measuring the offset between the two nozzles",
+        )
+        result = CalibrationRoutine._execute(self)
+        result["camera"] = found
+        return result

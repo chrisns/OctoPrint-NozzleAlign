@@ -65,11 +65,20 @@ class NozzleAlignPlugin(
             target_x_px=None,
             target_y_px=None,
             # camera discovery; nothing here is a coordinate you have to supply
-            search_z=80.0,
-            search_centre_x=160.0,
-            search_centre_y=175.0,
-            search_span_mm=120.0,
-            search_points=3,
+            # The camera can be anywhere on the bed. The sweep covers all of it
+            # and nothing is remembered between runs, so you can move the camera
+            # and simply run it again.
+            search_z=110.0,
+            search_x_min=25.0,
+            search_x_max=295.0,
+            search_y_min=25.0,
+            search_y_max=325.0,
+            raster_spacing_x=70.0,
+            raster_spacing_y=45.0,
+            raster_frame_average=2,
+            raster_thumb_px=320,
+            sweep_score_sigma=3.0,
+            sweep_tries=4,
             search_probe_mm=3.0,
             coarse_step=10.0,
             fine_step=2.0,
@@ -168,18 +177,6 @@ class NozzleAlignPlugin(
     def _routine_running(self):
         return self._routine is not None and self._routine.is_alive()
 
-    def _require_camera_position(self, config):
-        missing = [
-            key for key in ("camera_x", "camera_y", "camera_z")
-            if config.get(key) is None
-        ]
-        if missing:
-            raise ValueError(
-                "set the camera position first (%s); the routine lowers the "
-                "nozzle onto the camera and will not guess where it is"
-                % ", ".join(missing)
-            )
-
     # -- SimpleApiPlugin --------------------------------------------------
 
     def is_api_protected(self):
@@ -225,7 +222,6 @@ class NozzleAlignPlugin(
             if self._routine_running():
                 raise ValueError("a routine is already running")
             config = self._config()
-            self._require_camera_position(config)
             if not self._printer.is_operational():
                 raise ValueError("the printer is not connected")
             if self._printer.is_printing():
@@ -235,6 +231,7 @@ class NozzleAlignPlugin(
         return dict(started=True)
 
     def _api_run(self, data):
+        """Find the camera and measure the offset, both from scratch."""
         def factory(config):
             return _ResultKeepingRoutine(
                 self, self._bridge, config, self._notify, self._logger
@@ -261,6 +258,12 @@ class NozzleAlignPlugin(
         return dict(started=True)
 
     def _store_camera_position(self, result, template):
+        """Keep what was found, for display only.
+
+        These values are never read back to drive the machine. Every run
+        measures the camera again, so moving the camera needs no settings
+        change and cannot leave a stale height behind.
+        """
         for key in ("camera_x", "camera_y", "camera_z"):
             self._settings.set([key], result[key])
         self._settings.save()
@@ -409,11 +412,13 @@ class NozzleAlignPlugin(
         return True
 
 
-class _ResultKeepingRoutine(routine.CalibrationRoutine):
-    """Stores the result on the plugin so the UI can fetch it after a reload."""
+class _ResultKeepingRoutine(discovery.FullCalibration):
+    """Finds the camera and measures the offset, keeping the result for the UI."""
 
     def __init__(self, plugin, bridge, config, notify, logger):
-        super(_ResultKeepingRoutine, self).__init__(bridge, config, notify, logger)
+        super(_ResultKeepingRoutine, self).__init__(
+            bridge, config, notify, logger, on_result=plugin._store_camera_position
+        )
         self._plugin = plugin
 
     def run(self):

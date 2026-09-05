@@ -135,18 +135,22 @@ $(function () {
                 self.refreshPreview();
             } else if (data.type === "done") {
                 self.running(false);
+                var found = null;
                 if (data.result && data.result.camera_z !== undefined) {
-                    var c = data.result;
+                    found = data.result;
+                } else if (data.result && data.result.camera) {
+                    found = data.result.camera;
+                    self.result(data.result);
+                }
+                if (found) {
                     self.cameraWarning("");
                     self.cameraText(
-                        "Camera found at X" + c.camera_x.toFixed(2) +
-                        " Y" + c.camera_y.toFixed(2) +
-                        ", focus at Z" + c.camera_z.toFixed(2) +
-                        " (" + c.px_per_mm.toFixed(1) + " px/mm, turned " +
-                        c.rotation_deg.toFixed(1) + " degrees from the machine axes)"
+                        "X" + found.camera_x.toFixed(2) +
+                        " Y" + found.camera_y.toFixed(2) +
+                        ", focus at Z" + found.camera_z.toFixed(2) +
+                        " (" + found.px_per_mm.toFixed(1) + " px/mm, turned " +
+                        found.rotation_deg.toFixed(1) + " degrees from the machine axes)"
                     );
-                } else {
-                    self.result(data.result);
                 }
                 self.append("finished");
             } else if (data.type === "failed") {
@@ -159,13 +163,7 @@ $(function () {
         };
 
         self.onBeforeBinding = function () {
-            var settings = self.settingsViewModel.settings.plugins.nozzlealign;
-            if (!settings) return;
-            if (!settings.camera_x() || !settings.camera_y() || !settings.camera_z()) {
-                self.cameraWarning(
-                    "Set the camera position in the plugin settings first."
-                );
-            }
+            // no camera position is required up front; every run measures it
         };
 
         self.onTabChange = function (current) {
