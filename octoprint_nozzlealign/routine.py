@@ -67,32 +67,41 @@ class CalibrationRoutine(threading.Thread):
         )
 
     def _motion_probe(self, dx=0.0, dy=0.0):
-        """Move by a known amount and report where the nozzle was and went.
+        """Move by a known amount and report what moved in the picture.
 
-        The nozzle is the only thing the camera can see that moves, so this
+        The toolhead is the only thing the camera can see that moves, so this
         finds it without any model of what a nozzle looks like.  The toolhead is
-        left where it started.
+        left where it started.  See :func:`vision.measure_motion` for what the
+        returned dict holds and why ``compact`` matters.
         """
         before = self._frame()
         self._move_relative(dx=dx, dy=dy)
         after = self._frame()
         self._move_relative(dx=-dx, dy=-dy)
-        return vision.locate_by_motion(
+        return vision.measure_motion(
             before,
             after,
             threshold=float(self._cfg["motion_threshold"]),
             min_area=int(self._cfg["motion_min_area"]),
             min_circularity=float(self._cfg["motion_min_circularity"]),
             max_extent=float(self._cfg["motion_max_extent"]),
+            min_coverage=float(self._cfg["motion_min_coverage"]),
         )
 
     def _measure_tip(self, settle=2):
         """Average frames, detect the tip, and return its pixel position."""
         if self._cfg["strategy"] == "motion":
-            origin, _, details = self._motion_probe(
-                dx=float(self._cfg["motion_probe_mm"])
+            measured = self._motion_probe(dx=float(self._cfg["motion_probe_mm"]))
+            if not measured["compact"]:
+                raise CalibrationError(
+                    "the nozzle did not separate from the rest of the toolhead; "
+                    "the camera is too far away to measure an offset"
+                )
+            return (
+                np.array(measured["position"], dtype=float),
+                1.0,
+                measured["details"],
             )
-            return np.array(origin, dtype=float), 1.0, details
         frame = self._frame(settle=settle)
         options = dict(roi=self._cfg.get("roi"))
         strategy = self._cfg["strategy"]

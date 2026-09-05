@@ -30,14 +30,34 @@ distance from the lens.
 
 ### Finding the nozzle
 
-The nozzle is the only thing the camera can see that moves. The plugin nudges
-the toolhead, subtracts the two frames and takes the compact blob that changed.
-That needs no model of what a nozzle looks like, and it works whether the nozzle
-is darker or brighter than its background.
+The plugin nudges the toolhead and subtracts the two frames. Nothing else in the
+picture moves, so the difference isolates the machine. That needs no model of
+what a nozzle looks like, and it works whether the nozzle is darker or brighter
+than its background.
 
-Size alone is the wrong test. Moving the toolhead also moves the gantry beam,
-which paints a long thin sliver with a large area. The score rewards area and
-roundness together, so the sliver loses.
+There are two regimes, and the code reports which one it is in.
+
+**Close to the camera** the nozzle is the only thing in frame. Its two positions
+account for nearly everything that changed, so a compact blob really is the
+nozzle. Only in this regime is a position trusted as a nozzle position.
+
+**Far from the camera** the whole toolhead is in view and moves as one piece. No
+blob is the nozzle. A textured toolhead throws off plenty of small round
+difference blobs, and any one of them would pass a roundness test while being
+nothing to do with the nozzle, so roundness is not the test. Coverage is: when
+the best two blobs account for only a small share of everything that moved,
+the measurement stays coarse.
+
+In the coarse regime the displacement comes from the difference image alone.
+Correlating the two frames does not work, because most of the picture is a
+static background that pins the answer at zero however far the toolhead moved.
+For a rigid shift `s` the difference is `D(x) = A(x) - A(x - s)`, whose
+autocorrelation carries a strong negative dip at `+s` and `-s` and nothing from
+the static background. The dip gives the distance and the two difference lobes
+give the direction.
+
+The pixel map is right in both regimes, because it only depends on how far the
+picture shifted. That is what lets the search steer from a long way off.
 
 ### Finding the camera
 
@@ -45,11 +65,14 @@ roundness together, so the sliver loses.
 
 1. Home, then rise to the search height.
 2. Try the bed centre, then a widening grid, nudging at each point until the
-   camera sees the nozzle move.
-3. Drive the nozzle to the image centre. That is the camera X and Y.
-4. Step down, re-centring at each height, and measure focus as the variance of
-   the Laplacian. Stop at the sharpest height.
-5. Cut a picture of the nozzle at that height and keep it as a template.
+   camera sees the machine move.
+3. Steer the toolhead to the image centre. This is coarse: it works on the whole
+   toolhead, because at that range the nozzle has not separated yet.
+4. Step down, re-measuring and re-centring at each height. As the view narrows,
+   the nozzle separates and the measurement becomes fine.
+5. Measure focus as the variance of the Laplacian. Only heights where the nozzle
+   separated can win, so the answer always comes from the nozzle itself.
+6. Cut a picture of the nozzle at that height and keep it as a template.
 
 The descent is guarded three ways.
 

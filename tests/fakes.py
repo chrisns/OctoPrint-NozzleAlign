@@ -56,7 +56,7 @@ class PerspectiveCamera(object):
 
     def __init__(self, machine, camera_xy, lens_z, focus_z, rotation=9.0,
                  scale_constant=900.0, size=(800, 1280), nozzle_mm=0.9,
-                 bright=False, blur_per_mm=0.22):
+                 bright=False, blur_per_mm=0.22, nozzle_visible_below=None):
         self.machine = machine
         self.camera_xy = np.asarray(camera_xy, dtype=float)
         self.lens_z = float(lens_z)
@@ -67,6 +67,9 @@ class PerspectiveCamera(object):
         self.nozzle_mm = nozzle_mm
         self.bright = bright
         self.blur_per_mm = blur_per_mm
+        # above this height the whole toolhead is in view and the nozzle does
+        # not separate from it; below it, only the nozzle is left in frame
+        self.nozzle_visible_below = nozzle_visible_below
         self.centre_px = np.array([size[1] / 2.0, size[0] / 2.0])
 
     def scale(self):
@@ -86,6 +89,11 @@ class PerspectiveCamera(object):
         margin = self.nozzle_mm * self.scale()
         return margin < x < width - margin and margin < y < height - margin
 
+    def nozzle_separates(self):
+        if self.nozzle_visible_below is None:
+            return True
+        return self.machine.position_xyz[2] <= self.nozzle_visible_below
+
     def frame(self):
         import cv2
 
@@ -95,9 +103,32 @@ class PerspectiveCamera(object):
         image = np.full((height, width), background, dtype=np.float32)
         if self.in_view():
             cx, cy = self.tip_pixel()
-            radius = max(3.0, self.nozzle_mm * self.scale())
             ys, xs = np.mgrid[0:height, 0:width]
-            image[(xs - cx) ** 2 + (ys - cy) ** 2 <= radius ** 2] = ink
+            if self.nozzle_separates():
+                radius = max(3.0, self.nozzle_mm * self.scale())
+                image[(xs - cx) ** 2 + (ys - cy) ** 2 <= radius ** 2] = ink
+            else:
+                # the whole toolhead: a broad textured structure that moves as
+                # one piece, with no compact nozzle to pick out
+                span = min(18.0 * self.scale(), 0.35 * min(width, height))
+                rng = np.random.default_rng(11)
+                block = rng.normal(0.0, 45.0, (24, 24)).astype(np.float32)
+                tile = cv2.resize(
+                    block, (int(2 * span) + 2, int(2 * span) + 2),
+                    interpolation=cv2.INTER_CUBIC,
+                )
+                x0 = int(cx - span)
+                y0 = int(cy - span)
+                for iy in range(tile.shape[0]):
+                    ty = y0 + iy
+                    if 0 <= ty < height:
+                        tx0 = max(0, x0)
+                        tx1 = min(width, x0 + tile.shape[1])
+                        if tx1 > tx0:
+                            image[ty, tx0:tx1] = (
+                                background * 0.55
+                                + tile[iy, tx0 - x0:tx1 - x0]
+                            )
         defocus = abs(self.machine.position_xyz[2] - self.focus_z) * self.blur_per_mm
         if defocus > 0.4:
             sigma = float(defocus)

@@ -22,6 +22,7 @@ def discovery_config(**overrides):
         motion_min_area=60,
         motion_min_circularity=0.25,
         motion_max_extent=0.4,
+        motion_min_coverage=0.5,
         motion_probe_mm=0.6,
         search_z=80.0,
         search_centre_x=160.0,
@@ -188,24 +189,34 @@ def test_discovery_gives_up_clearly_when_the_nozzle_never_appears(monkeypatch):
     assert "could not see the nozzle" in str(caught.value)
 
 
-def test_motion_ignores_the_gantry_beam():
-    """Moving the toolhead also moves the gantry, which is not the nozzle."""
+def test_motion_will_not_call_a_frame_wide_change_the_nozzle():
+    """The gantry beam is in view too, so nothing here can be trusted as a tip.
+
+    A round difference blob is not enough. When the two blobs account for only
+    a small part of everything that moved, some of it is structure other than
+    the nozzle, so the measurement stays coarse and the caller is told not to
+    treat the position as a nozzle.
+
+    Only the decision is asserted here. Shift accuracy for a rigidly moving
+    structure is covered by the two tests above.
+    """
     height, width = 800, 1280
-    def render(nozzle_x, beam_y):
+    # a real beam carries bolts and edges, so its sideways movement is visible
+    beam = np.random.default_rng(9).normal(40.0, 25.0, (26, width))
+
+    def render(dx, dy):
         image = np.full((height, width), 200.0, dtype=np.float32)
-        # the gantry beam: a long thin bar across the whole frame
-        image[int(beam_y):int(beam_y) + 26, :] = 40.0
-        # the nozzle: a small compact disc
+        top = int(200 + dy)
+        image[top:top + 26, :] = np.roll(beam, int(dx), axis=1)
+        # the nozzle: a small compact disc, moving with it
         ys, xs = np.mgrid[0:height, 0:width]
-        image[(xs - nozzle_x) ** 2 + (ys - 620) ** 2 <= 22 ** 2] = 30.0
+        image[(xs - (600 + dx)) ** 2 + (ys - (620 + dy)) ** 2 <= 22 ** 2] = 30.0
         return image + np.random.default_rng(4).normal(0.0, 1.5, image.shape)
 
-    before = render(600.0, 200.0)
-    after = render(660.0, 232.0)
-    found_a, found_b, details = vision.locate_by_motion(before, after)
-    assert found_a == pytest.approx((600.0, 620.0), abs=6.0)
-    assert found_b == pytest.approx((660.0, 620.0), abs=6.0)
-    assert details["circularity"] > 0.5
+    measured = vision.measure_motion(render(0, 0), render(24, 9))
+    assert measured["compact"] is False
+    with pytest.raises(vision.DetectionError):
+        vision.locate_by_motion(render(0, 0), render(24, 9))
 
 
 @pytest.mark.parametrize("rotation", [0.0, 37.0, 91.5, -128.0, 179.0])
@@ -242,3 +253,84 @@ def test_calibration_copes_with_any_camera_rotation(monkeypatch, rotation):
     _, _, job = build_calibration(monkeypatch, error, rotation=rotation)
     result = job._execute()
     assert result["correction"] == pytest.approx([-error[0], -error[1]], abs=0.02)
+
+
+# -- the two regimes --------------------------------------------------------
+
+
+def test_measure_motion_reports_a_compact_nozzle():
+    height, width = 600, 900
+    def render(cx):
+        image = np.full((height, width), 200.0, dtype=np.float32)
+        ys, xs = np.mgrid[0:height, 0:width]
+        image[(xs - cx) ** 2 + (ys - 300) ** 2 <= 25 ** 2] = 30.0
+        return image + np.random.default_rng(5).normal(0.0, 1.5, image.shape)
+
+    measured = vision.measure_motion(render(400.0), render(452.0))
+    assert measured["compact"] is True
+    assert measured["position"] == pytest.approx((400.0, 300.0), abs=3.0)
+    assert measured["shift"] == pytest.approx((52.0, 0.0), abs=3.0)
+
+
+def test_measure_motion_falls_back_to_phase_correlation_at_long_range():
+    """Far from the camera the whole toolhead moves and no blob is compact.
+
+    Blob centroids would be badly wrong there, because a small move of a large
+    object only changes a thin crescent at each edge. Phase correlation over the
+    region that changed measures the real displacement instead.
+    """
+    height, width = 600, 900
+    rng = np.random.default_rng(6)
+    texture = rng.normal(0.0, 40.0, (120, 160)).astype(np.float32)
+    import cv2
+    body = cv2.resize(texture, (520, 420), interpolation=cv2.INTER_CUBIC) + 120.0
+
+    def render(x0, y0):
+        image = np.full((height, width), 200.0, dtype=np.float32)
+        image[y0:y0 + body.shape[0], x0:x0 + body.shape[1]] = body
+        return image + rng.normal(0.0, 1.0, image.shape)
+
+    before = render(150, 90)
+    after = render(150 + 18, 90 + 7)
+    measured = vision.measure_motion(before, after)
+    assert measured["compact"] is False
+    assert measured["shift"] == pytest.approx((18.0, 7.0), abs=2.0)
+
+
+def test_discovery_starts_coarse_and_finishes_on_the_nozzle(monkeypatch):
+    """The search steers on the whole toolhead, then refines on the nozzle."""
+    bridge = FakeBridge()
+    camera = PerspectiveCamera(
+        bridge, CAMERA_XY, lens_z=LENS_Z, focus_z=FOCUS_Z,
+        nozzle_visible_below=45.0,
+    )
+    monkeypatch.setattr(
+        vision, "average_frames",
+        lambda url, count=1, timeout=1.0, settle=0: camera.frame(),
+    )
+    job = discovery.DiscoveryRoutine(
+        bridge, discovery_config(), Recorder(), NullLogger()
+    )
+    result = job._execute()
+    assert result["camera_x"] == pytest.approx(CAMERA_XY[0], abs=0.6)
+    assert result["camera_y"] == pytest.approx(CAMERA_XY[1], abs=0.6)
+    # the answer must come from a height where the nozzle really did separate
+    assert result["camera_z"] <= 45.0
+
+
+def test_discovery_says_so_when_the_nozzle_never_separates(monkeypatch):
+    bridge = FakeBridge()
+    camera = PerspectiveCamera(
+        bridge, CAMERA_XY, lens_z=LENS_Z, focus_z=FOCUS_Z,
+        nozzle_visible_below=0.0,
+    )
+    monkeypatch.setattr(
+        vision, "average_frames",
+        lambda url, count=1, timeout=1.0, settle=0: camera.frame(),
+    )
+    job = discovery.DiscoveryRoutine(
+        bridge, discovery_config(), Recorder(), NullLogger()
+    )
+    with pytest.raises(discovery.CalibrationError) as caught:
+        job._execute()
+    assert "never separated" in str(caught.value)

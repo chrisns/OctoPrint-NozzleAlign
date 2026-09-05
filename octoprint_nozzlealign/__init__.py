@@ -87,6 +87,7 @@ class NozzleAlignPlugin(
             # a nozzle paints a compact blob; the gantry beam paints a sliver
             motion_min_circularity=0.25,
             motion_max_extent=0.4,
+            motion_min_coverage=0.5,
             motion_probe_mm=0.6,
             contour_invert=True,
             blur=5,

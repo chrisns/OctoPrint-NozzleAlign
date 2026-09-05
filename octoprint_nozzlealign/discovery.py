@@ -31,17 +31,21 @@ class DiscoveryRoutine(CalibrationRoutine):
     # -- measurement ------------------------------------------------------
 
     def _pixel_map_here(self, distance):
-        """Measure the pixel map and the nozzle position at the current height."""
-        origin_x, moved_x, details = self._motion_probe(dx=distance)
-        origin_y, moved_y, _ = self._motion_probe(dy=distance)
-        origin = np.array(
-            [
-                (origin_x[0] + origin_y[0]) / 2.0,
-                (origin_x[1] + origin_y[1]) / 2.0,
-            ]
+        """Measure the pixel map and where the toolhead is at this height.
+
+        Far from the camera the whole toolhead fills the frame and no single
+        nozzle blob exists.  The map is still correct there, because it comes
+        from how far the picture shifted, so the search can steer on it.  Only
+        once ``compact`` is true does the position refer to the nozzle itself.
+        """
+        probe_x = self._motion_probe(dx=distance)
+        probe_y = self._motion_probe(dy=distance)
+        matrix = geometry.build_pixel_map_from_shifts(
+            probe_x["shift"], probe_y["shift"], distance
         )
-        matrix = geometry.build_pixel_map(origin, moved_x, moved_y, distance)
-        return matrix, origin, details
+        position = np.array(probe_x["position"], dtype=float)
+        compact = bool(probe_x["compact"] and probe_y["compact"])
+        return matrix, position, compact, probe_x["details"]
 
     # -- search -----------------------------------------------------------
 
@@ -69,14 +73,17 @@ class DiscoveryRoutine(CalibrationRoutine):
             )
             self._move_absolute(x=x, y=y)
             try:
-                matrix, origin, details = self._pixel_map_here(distance)
+                matrix, origin, compact, _ = self._pixel_map_here(distance)
             except (vision.DetectionError, geometry.GeometryError) as exception:
                 last_error = str(exception)
                 continue
             self._progress(
                 "search",
-                "found the nozzle at %.0f, %.0f px, %.1f px/mm"
-                % (origin[0], origin[1], geometry.pixels_per_mm(matrix)),
+                "saw the toolhead at %.0f, %.0f px, %.1f px/mm%s"
+                % (
+                    origin[0], origin[1], geometry.pixels_per_mm(matrix),
+                    "" if compact else " (whole toolhead, not yet the nozzle)",
+                ),
             )
             return matrix, origin
         raise CalibrationError(
@@ -89,7 +96,7 @@ class DiscoveryRoutine(CalibrationRoutine):
         tolerance = float(self._cfg["discovery_tolerance_mm"])
         for index in range(int(self._cfg["max_passes"])):
             self._check_abort()
-            origin, _, _ = self._motion_probe(dx=distance)
+            origin = self._motion_probe(dx=distance)["position"]
             dx, dy = geometry.pixel_error_to_mm(matrix, origin, target)
             error = (dx * dx + dy * dy) ** 0.5
             self._progress(
@@ -193,34 +200,40 @@ class DiscoveryRoutine(CalibrationRoutine):
                 )
                 z = next_z
                 try:
-                    matrix, origin, details = self._pixel_map_here(distance)
+                    matrix, origin, compact, details = self._pixel_map_here(distance)
                 except (vision.DetectionError, geometry.GeometryError) as exception:
                     self._progress(
-                        "descend", "lost the nozzle at Z%.2f: %s" % (z, exception)
+                        "descend", "lost the toolhead at Z%.2f: %s" % (z, exception)
                     )
                     break
 
-                frame_area = float(np.prod(self._frame().shape))
-                if details["area_a"] / frame_area > area_limit:
+                frame = self._frame()
+                frame_area = float(frame.shape[0] * frame.shape[1])
+                if compact and details["area"] / frame_area > area_limit:
                     self._progress(
                         "descend",
                         "the nozzle fills %.0f%% of the frame at Z%.2f; stopping"
-                        % (100.0 * details["area_a"] / frame_area, z),
+                        % (100.0 * details["area"] / frame_area, z),
                     )
                     break
 
                 self._centre_here(matrix, target, distance, "Z%.1f" % z)
                 frame = self._frame()
-                origin, _, _ = self._motion_probe(dx=distance)
+                probe = self._motion_probe(dx=distance)
+                origin = probe["position"]
+                compact = compact and probe["compact"]
                 focus = vision.sharpness(frame, origin, int(cfg["focus_window_px"]))
                 scale = geometry.pixels_per_mm(matrix)
                 samples.append((z, scale))
                 position = self._bridge.position(timeout=float(cfg["move_timeout"]))
                 self._progress(
                     "descend",
-                    "Z%.2f: %.1f px/mm, focus %.0f" % (z, scale, focus),
-                    z=z, px_per_mm=scale, sharpness=focus,
+                    "Z%.2f: %.1f px/mm, focus %.0f%s"
+                    % (z, scale, focus, "" if compact else " (toolhead, not the nozzle)"),
+                    z=z, px_per_mm=scale, sharpness=focus, compact=compact,
                 )
+                if not compact:
+                    continue
                 if best is None or focus > best["sharpness"]:
                     best = dict(
                         x=position[0], y=position[1], z=z,
@@ -241,7 +254,12 @@ class DiscoveryRoutine(CalibrationRoutine):
                 z = min(z + step, float(cfg["search_z"]))
 
         if best is None:
-            raise CalibrationError("never found a focused view of the nozzle")
+            raise CalibrationError(
+                "the nozzle never separated from the rest of the toolhead before "
+                "the descent had to stop; lower the minimum Z, reduce the "
+                "clearance above the lens, or check that the camera is aimed at "
+                "the nozzle and in focus"
+            )
         lens_z = estimate_lens_z(samples)
         best["lens_z"] = lens_z if lens_z is not None else float("nan")
         return best

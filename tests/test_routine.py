@@ -39,6 +39,7 @@ def make_config(**overrides):
         motion_min_area=60,
         motion_min_circularity=0.25,
         motion_max_extent=0.4,
+        motion_min_coverage=0.5,
         motion_probe_mm=0.6,
         contour_invert=True,
         blur=5,

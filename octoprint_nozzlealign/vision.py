@@ -230,16 +230,27 @@ def _subpixel_peak(surface, x, y):
 # --------------------------------------------------------------------------
 
 
-def locate_by_motion(frame_a, frame_b, threshold=4.0, min_area=60,
-                     min_circularity=0.25, max_extent=0.4):
-    """Find the nozzle in two frames taken either side of a known move.
+def measure_motion(frame_a, frame_b, threshold=4.0, min_area=60,
+                   min_circularity=0.25, max_extent=0.4, min_coverage=0.5):
+    """Find what moved between two frames taken either side of a known move.
 
-    The nozzle is the only thing in the picture that moves, so subtracting the
-    two frames isolates it without any model of what a nozzle looks like.  This
-    works whether the nozzle is darker or brighter than its background, so it
-    needs no tuning before the camera has ever seen a nozzle.
+    Returns a dict with
 
-    Returns ``(position_in_a, position_in_b, details)``.
+    ``position``  where the moving thing sits in ``frame_a``
+    ``shift``     how far it moved, to sub-pixel accuracy
+    ``compact``   True when a single nozzle sized blob was isolated
+
+    Two regimes matter, and the caller needs to know which one it got.
+
+    Close to the camera the nozzle is the only thing in the frame, so it
+    isolates cleanly as a compact blob and ``position`` really is the nozzle.
+
+    Far from the camera the whole toolhead is in view and moves as one piece.
+    No compact blob exists, and a small move only changes a thin crescent at
+    each edge, so blob centroids would badly overstate the displacement.  In
+    that regime the shift comes from phase correlation over the region that
+    changed, which measures the movement of the structure itself, and
+    ``position`` is the centre of that region rather than the nozzle.
     """
     _require_cv2()
     a = np.asarray(frame_a, dtype=np.float32)
@@ -250,34 +261,159 @@ def locate_by_motion(frame_a, frame_b, threshold=4.0, min_area=60,
     noise = float(np.median(np.abs(difference - np.median(difference)))) * 1.4826
     level = max(threshold, threshold * noise)
 
-    positive = _best_blob(difference > level, min_area, min_circularity, max_extent)
-    negative = _best_blob(difference < -level, min_area, min_circularity, max_extent)
-    if positive is None or negative is None:
+    changed = np.abs(difference) > level
+    if changed.sum() < min_area:
         raise DetectionError(
             "no moving object found; the nozzle may be outside the field of view"
         )
+    box = _bounding_box(changed, pad=0, shape=a.shape)
+    total_changed = float(changed.sum())
 
-    # Decide which blob holds the nozzle in frame a.  At the nozzle's position
-    # in a, frame a shows the nozzle; at its position in b, frame a shows the
-    # background.  So the blob whose pixels differ most from the background in
-    # frame a is the one that holds the nozzle in a.
-    background = float(np.median(a))
-    lift_positive = abs(_masked_mean(a, positive["mask"]) - background)
-    lift_negative = abs(_masked_mean(a, negative["mask"]) - background)
-    if lift_positive >= lift_negative:
-        in_a, in_b = positive, negative
-    else:
-        in_a, in_b = negative, positive
+    # Coverage decides the regime, not blob shape and not how far apart the two
+    # positions are.  A textured toolhead throws off plenty of small round
+    # difference blobs, and any one of them would pass a roundness test while
+    # being nothing to do with the nozzle.  When the nozzle is the only thing in
+    # frame, its two positions account for nearly everything that changed.  When
+    # the toolhead or the gantry is in frame as well, they do not.
+    positive = _best_blob(difference > level, min_area, min_circularity, max_extent)
+    negative = _best_blob(difference < -level, min_area, min_circularity, max_extent)
+    coverage = 0.0
+    if positive is not None and negative is not None:
+        coverage = (positive["area"] + negative["area"]) / max(total_changed, 1.0)
+        if coverage < min_coverage:
+            positive = negative = None
+    if positive is not None and negative is not None:
+        in_a, in_b = _assign_by_contrast(a, positive, negative)
+        shift = (
+            in_b["centre"][0] - in_a["centre"][0],
+            in_b["centre"][1] - in_a["centre"][1],
+        )
+        return dict(
+            position=in_a["centre"],
+            shift=shift,
+            compact=True,
+            details=dict(
+                area=in_a["area"],
+                radius=in_a["radius"],
+                circularity=in_a["circularity"],
+                coverage=coverage,
+                noise=noise,
+            ),
+        )
 
-    details = dict(
-        area_a=in_a["area"],
-        area_b=in_b["area"],
-        radius=in_a["radius"],
-        circularity=in_a["circularity"],
-        contrast=float(max(lift_positive, lift_negative)),
-        noise=noise,
+    padded = _pad_box(box, pad=40, shape=a.shape)
+    shift = _rigid_shift(a, difference, padded)
+    ys, xs = np.nonzero(changed)
+    return dict(
+        position=(float(xs.mean()), float(ys.mean())),
+        shift=shift,
+        compact=False,
+        details=dict(
+            area=total_changed, coverage=coverage, noise=noise, box=list(padded)
+        ),
     )
-    return in_a["centre"], in_b["centre"], details
+
+
+def locate_by_motion(frame_a, frame_b, threshold=4.0, min_area=60,
+                     min_circularity=0.25, max_extent=0.4, min_coverage=0.5):
+    """Where a compact moving object sits in each of two frames."""
+    measured = measure_motion(
+        frame_a, frame_b, threshold, min_area, min_circularity,
+        max_extent, min_coverage,
+    )
+    if not measured["compact"]:
+        raise DetectionError(
+            "the moving region is not a single compact object; the camera is "
+            "probably too far away to isolate the nozzle"
+        )
+    x, y = measured["position"]
+    dx, dy = measured["shift"]
+    return (x, y), (x + dx, y + dy), measured["details"]
+
+
+def _assign_by_contrast(frame, positive, negative):
+    """Decide which difference blob holds the object in the first frame.
+
+    At the object's position in ``a``, frame ``a`` shows the object; at its
+    position in ``b``, frame ``a`` shows the background.  So the blob whose
+    pixels differ most from the background in ``a`` is the one in ``a``.  This
+    works whether the object is darker or brighter than its surroundings.
+    """
+    background = float(np.median(frame))
+    lift_positive = abs(_masked_mean(frame, positive["mask"]) - background)
+    lift_negative = abs(_masked_mean(frame, negative["mask"]) - background)
+    if lift_positive >= lift_negative:
+        return positive, negative
+    return negative, positive
+
+
+def _bounding_box(mask, pad, shape):
+    ys, xs = np.nonzero(mask)
+    return _pad_box(
+        (int(ys.min()), int(ys.max()), int(xs.min()), int(xs.max())), pad, shape
+    )
+
+
+def _pad_box(box, pad, shape):
+    y0, y1, x0, x1 = box
+    return (
+        max(0, y0 - pad),
+        min(shape[0], y1 + pad),
+        max(0, x0 - pad),
+        min(shape[1], x1 + pad),
+    )
+
+
+def _rigid_shift(frame_a, difference, box):
+    """Displacement of a rigidly moving structure, from the difference alone.
+
+    Correlating the two frames does not work here.  Most of the picture is a
+    static background that dominates the correlation and pins the answer at
+    zero, however far the toolhead actually moved.
+
+    The difference image does not have that problem.  For a rigid shift ``s``
+    it is ``D(x) = A(x) - A(x - s)``, whose autocorrelation carries a strong
+    negative dip at ``+s`` and at ``-s``, and nothing from the static
+    background at all.  The dip gives the distance; the two difference lobes
+    give the direction.
+    """
+    y0, y1, x0, x1 = box
+    patch = np.ascontiguousarray(difference[y0:y1, x0:x1], dtype=np.float32)
+    if patch.shape[0] < 16 or patch.shape[1] < 16:
+        raise DetectionError("the region that changed is too small to measure")
+    patch = patch - patch.mean()
+    window = np.outer(np.hanning(patch.shape[0]), np.hanning(patch.shape[1]))
+    spectrum = np.fft.rfft2(patch * window)
+    correlation = np.fft.fftshift(np.fft.irfft2(np.abs(spectrum) ** 2, patch.shape))
+
+    centre_y, centre_x = patch.shape[0] // 2, patch.shape[1] // 2
+    ys, xs = np.mgrid[0:patch.shape[0], 0:patch.shape[1]]
+    radius = np.hypot(xs - centre_x, ys - centre_y)
+    search = correlation.copy()
+    search[radius < 3] = 0.0
+    peak = np.unravel_index(np.argmin(search), search.shape)
+    magnitude = (float(peak[1] - centre_x), float(peak[0] - centre_y))
+
+    # The dip appears at both +s and -s, so the direction has to come from the
+    # two lobes of the difference.  Which lobe is the starting position depends
+    # on whether the object is darker or brighter than its background, so the
+    # first frame decides it rather than an assumption about polarity.
+    level = float(np.abs(patch).max()) * 0.25
+    positive = patch > level
+    negative = patch < -level
+    if positive.sum() < 4 or negative.sum() < 4:
+        return magnitude
+    reference = np.ascontiguousarray(frame_a[y0:y1, x0:x1], dtype=np.float32)
+    background = float(np.median(reference))
+    lift_positive = abs(float(reference[positive].mean()) - background)
+    lift_negative = abs(float(reference[negative].mean()) - background)
+    start, end = (positive, negative) if lift_positive >= lift_negative else (negative, positive)
+    sy, sx = np.nonzero(start)
+    ey, ex = np.nonzero(end)
+    direction = (float(ex.mean() - sx.mean()), float(ey.mean() - sy.mean()))
+    if direction[0] * magnitude[0] + direction[1] * magnitude[1] < 0:
+        return (-magnitude[0], -magnitude[1])
+    return magnitude
 
 
 def _best_blob(mask, min_area, min_circularity=0.25, max_extent=0.4):
