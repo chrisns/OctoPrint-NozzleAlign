@@ -46,6 +46,67 @@ class FakeCamera(object):
         return image
 
 
+class PerspectiveCamera(object):
+    """An upward camera whose scale and focus both depend on height.
+
+    The image scale of the nozzle is inversely proportional to its distance
+    from the lens, and the picture is sharpest at one height.  Both are what the
+    discovery routine measures, so the fake has to model both.
+    """
+
+    def __init__(self, machine, camera_xy, lens_z, focus_z, rotation=9.0,
+                 scale_constant=900.0, size=(800, 1280), nozzle_mm=0.9,
+                 bright=False, blur_per_mm=0.22):
+        self.machine = machine
+        self.camera_xy = np.asarray(camera_xy, dtype=float)
+        self.lens_z = float(lens_z)
+        self.focus_z = float(focus_z)
+        self.rotation = rotation
+        self.scale_constant = float(scale_constant)
+        self.size = size
+        self.nozzle_mm = nozzle_mm
+        self.bright = bright
+        self.blur_per_mm = blur_per_mm
+        self.centre_px = np.array([size[1] / 2.0, size[0] / 2.0])
+
+    def scale(self):
+        distance = max(1.0, self.machine.position_xyz[2] - self.lens_z)
+        return self.scale_constant / distance
+
+    def matrix(self):
+        return rotation_matrix(self.scale(), self.rotation)
+
+    def tip_pixel(self):
+        physical = self.machine.physical_xy()
+        return self.centre_px + self.matrix().dot(physical - self.camera_xy)
+
+    def in_view(self):
+        height, width = self.size
+        x, y = self.tip_pixel()
+        margin = self.nozzle_mm * self.scale()
+        return margin < x < width - margin and margin < y < height - margin
+
+    def frame(self):
+        import cv2
+
+        height, width = self.size
+        background = 40.0 if self.bright else 210.0
+        ink = 220.0 if self.bright else 25.0
+        image = np.full((height, width), background, dtype=np.float32)
+        if self.in_view():
+            cx, cy = self.tip_pixel()
+            radius = max(3.0, self.nozzle_mm * self.scale())
+            ys, xs = np.mgrid[0:height, 0:width]
+            image[(xs - cx) ** 2 + (ys - cy) ** 2 <= radius ** 2] = ink
+        defocus = abs(self.machine.position_xyz[2] - self.focus_z) * self.blur_per_mm
+        if defocus > 0.4:
+            sigma = float(defocus)
+            size_px = int(sigma * 6) | 1
+            image = cv2.GaussianBlur(image, (size_px, size_px), sigma)
+        image += np.random.default_rng(0).normal(0.0, 1.5, image.shape)
+        return image
+
+
 class FakeBridge(object):
     """Enough of GcodeBridge to drive the routine."""
 

@@ -9,18 +9,63 @@ The camera is the Printables model
 Klipper and Axiscope and ships no software. This repository is the Marlin and
 OctoPrint side.
 
-## How it measures
+## Nothing is measured by hand
 
-The plugin never asks you for a pixel scale. It measures one.
+You give the plugin no coordinates, no pixel scale and no camera orientation. It
+measures all three.
 
-1. It moves nozzle 0 over the camera.
-2. It commands a known move in X, then a known move in Y, and watches how far
-   the tip travels in the image.
-3. Those two displacements give a 2x2 matrix of pixels per millimetre. The
-   matrix captures scale, camera rotation and mirroring in one step.
-4. It drives nozzle 0 onto the target pixel, then reads the machine position.
-5. It selects nozzle 1, repeats, and reads the machine position again.
-6. The difference between the two positions is the correction.
+### The pixel map
+
+The plugin commands a known move in X, then a known move in Y, and watches how
+far the nozzle travels in the image. Those two displacements are the columns of
+a 2x2 matrix of pixels per millimetre.
+
+One matrix carries the scale, the camera rotation, any mirroring and any skew.
+The camera does not have to be square to the machine axes, and no setting
+describes how it sits. The tests cover rotations of 0, 37, 91.5, −128 and 179
+degrees with a mirrored image.
+
+The map is rebuilt at every working height, because the scale changes with
+distance from the lens.
+
+### Finding the nozzle
+
+The nozzle is the only thing the camera can see that moves. The plugin nudges
+the toolhead, subtracts the two frames and takes the compact blob that changed.
+That needs no model of what a nozzle looks like, and it works whether the nozzle
+is darker or brighter than its background.
+
+Size alone is the wrong test. Moving the toolhead also moves the gantry beam,
+which paints a long thin sliver with a large area. The score rewards area and
+roundness together, so the sliver loses.
+
+### Finding the camera
+
+"Find the camera" on the Nozzle Align tab does this.
+
+1. Home, then rise to the search height.
+2. Try the bed centre, then a widening grid, nudging at each point until the
+   camera sees the nozzle move.
+3. Drive the nozzle to the image centre. That is the camera X and Y.
+4. Step down, re-centring at each height, and measure focus as the variance of
+   the Laplacian. Stop at the sharpest height.
+5. Cut a picture of the nozzle at that height and keep it as a template.
+
+The descent is guarded three ways.
+
+- The image scale of the nozzle is inversely proportional to its distance from
+  the lens, so `1 / scale` falls linearly as Z falls. Where that line crosses
+  zero is the lens. The plugin fits that line as it descends and stops a set
+  clearance above the answer.
+- A hard floor from the settings.
+- A limit on how much of the frame the nozzle may fill.
+
+### Measuring the offset
+
+1. Move nozzle 0 over the camera and build the map.
+2. Drive nozzle 0 onto the target pixel, then read the machine position.
+3. Select nozzle 1, repeat, and read the machine position again.
+4. The difference between the two positions is the correction.
 
 The loop repeats until the residual falls below the tolerance, which defaults to
 0.005 mm.
@@ -59,14 +104,14 @@ that wizard afterwards overwrites what this plugin stored.
 
 The routine lowers the nozzle onto a camera that sits on the bed.
 
-- It refuses to start until the camera X, Y and Z are set.
+- It refuses to measure until the camera X, Y and Z are known.
 - Every travel move goes through the configured safe Z.
 - It refuses to write an offset further than `offset_limit_mm` from the
   expected value.
 - The Stop button aborts between moves.
 
-Jog the nozzle over the camera by hand first and copy the coordinates into the
-settings. Do not guess them.
+The search height must clear everything on the bed. That is the one number worth
+checking before the first run.
 
 ## Install
 

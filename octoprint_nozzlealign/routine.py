@@ -57,15 +57,43 @@ class CalibrationRoutine(threading.Thread):
 
     # -- capture ----------------------------------------------------------
 
-    def _measure_tip(self, settle=2):
-        """Average frames, detect the tip, and return its pixel position."""
+    def _frame(self, settle=1):
         self._check_abort()
-        frame = vision.average_frames(
+        return vision.average_frames(
             self._cfg["snapshot_url"],
             count=int(self._cfg["frame_average"]),
             timeout=float(self._cfg["http_timeout"]),
             settle=settle,
         )
+
+    def _motion_probe(self, dx=0.0, dy=0.0):
+        """Move by a known amount and report where the nozzle was and went.
+
+        The nozzle is the only thing the camera can see that moves, so this
+        finds it without any model of what a nozzle looks like.  The toolhead is
+        left where it started.
+        """
+        before = self._frame()
+        self._move_relative(dx=dx, dy=dy)
+        after = self._frame()
+        self._move_relative(dx=-dx, dy=-dy)
+        return vision.locate_by_motion(
+            before,
+            after,
+            threshold=float(self._cfg["motion_threshold"]),
+            min_area=int(self._cfg["motion_min_area"]),
+            min_circularity=float(self._cfg["motion_min_circularity"]),
+            max_extent=float(self._cfg["motion_max_extent"]),
+        )
+
+    def _measure_tip(self, settle=2):
+        """Average frames, detect the tip, and return its pixel position."""
+        if self._cfg["strategy"] == "motion":
+            origin, _, details = self._motion_probe(
+                dx=float(self._cfg["motion_probe_mm"])
+            )
+            return np.array(origin, dtype=float), 1.0, details
+        frame = self._frame(settle=settle)
         options = dict(roi=self._cfg.get("roi"))
         strategy = self._cfg["strategy"]
         if strategy == "contour":

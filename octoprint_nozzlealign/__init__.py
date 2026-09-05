@@ -9,7 +9,7 @@ import threading
 import flask
 import octoprint.plugin
 
-from . import geometry, routine, vision
+from . import discovery, geometry, routine, vision
 from .gcode import GcodeBridge, format_offset_command
 
 __plugin_name__ = "XY Nozzle Alignment"
@@ -31,6 +31,7 @@ class NozzleAlignPlugin(
         self._routine = None
         self._routine_lock = threading.Lock()
         self._last_result = None
+        self._last_discovery = None
         self._template = None
 
     # -- SettingsPlugin ---------------------------------------------------
@@ -63,8 +64,30 @@ class NozzleAlignPlugin(
             max_correction_mm=5.0,
             target_x_px=None,
             target_y_px=None,
+            # camera discovery; nothing here is a coordinate you have to supply
+            search_z=80.0,
+            search_centre_x=160.0,
+            search_centre_y=175.0,
+            search_span_mm=120.0,
+            search_points=3,
+            search_probe_mm=3.0,
+            coarse_step=10.0,
+            fine_step=2.0,
+            min_z=12.0,
+            lens_clearance_mm=6.0,
+            max_blob_fraction=0.15,
+            focus_window_px=240,
+            focus_drop_ratio=0.6,
+            template_size_px=96,
+            discovery_tolerance_mm=0.2,
             # detection
-            strategy="contour",
+            strategy="motion",
+            motion_threshold=4.0,
+            motion_min_area=60,
+            # a nozzle paints a compact blob; the gantry beam paints a sliver
+            motion_min_circularity=0.25,
+            motion_max_extent=0.4,
+            motion_probe_mm=0.6,
             contour_invert=True,
             blur=5,
             min_area=200,
@@ -164,6 +187,7 @@ class NozzleAlignPlugin(
     def get_api_commands(self):
         return dict(
             run=[],
+            discover=[],
             verify=[],
             abort=[],
             apply=["x", "y"],
@@ -191,6 +215,7 @@ class NozzleAlignPlugin(
         return flask.jsonify(
             running=self._routine_running(),
             result=self._last_result,
+            discovery=self._last_discovery,
             has_template=self._template is not None,
         )
 
@@ -214,6 +239,36 @@ class NozzleAlignPlugin(
                 self, self._bridge, config, self._notify, self._logger
             )
         return self._start(factory)
+
+    def _api_discover(self, data):
+        """Find the camera without being told where it is."""
+        with self._routine_lock:
+            if self._routine_running():
+                raise ValueError("a routine is already running")
+            if not self._printer.is_operational():
+                raise ValueError("the printer is not connected")
+            if self._printer.is_printing():
+                raise ValueError("the printer is busy")
+            self._routine = discovery.DiscoveryRoutine(
+                self._bridge,
+                self._config(),
+                self._notify,
+                self._logger,
+                on_result=self._store_camera_position,
+            )
+            self._routine.start()
+        return dict(started=True)
+
+    def _store_camera_position(self, result, template):
+        for key in ("camera_x", "camera_y", "camera_z"):
+            self._settings.set([key], result[key])
+        self._settings.save()
+        self._template = template
+        self._last_discovery = result
+        self._logger.info(
+            "camera found at X%.3f Y%.3f Z%.3f", result["camera_x"],
+            result["camera_y"], result["camera_z"],
+        )
 
     def _api_verify(self, data):
         if self._last_result is None:

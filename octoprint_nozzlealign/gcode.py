@@ -23,9 +23,14 @@ _OFFSET_RE = re.compile(
     r"(?:\s+Y(?P<y>-?\d+\.?\d*))?"
     r"(?:\s+Z(?P<z>-?\d+\.?\d*))?"
 )
-# Marlin also reports the offsets as a bare triple after an "offset" header
+# Marlin also reports the offsets as bare triples after an "offset" header.
+# Snapmaker answers a bare M218 with every triple on the header line itself:
+#   echo:Hotend offsets: 0.00,0.00,0.000 25.20,0.32,-0.891
 _TRIPLE_RE = re.compile(
     r"^\s*(?P<x>-?\d+\.\d+)[,\s]+(?P<y>-?\d+\.\d+)[,\s]+(?P<z>-?\d+\.\d+)\s*$"
+)
+_INLINE_TRIPLE_RE = re.compile(
+    r"(?<![\d.-])(-?\d+\.\d+),(-?\d+\.\d+),(-?\d+\.\d+)(?![\d.])"
 )
 
 
@@ -139,12 +144,17 @@ def parse_hotend_offset(lines, tool=1):
                 float(match.group("z") or 0.0),
             )
 
-    # Fallback: a header line followed by one bare triple per hotend.
+    # Fallback: an "offset" header carrying one triple per hotend, either on the
+    # header line itself or on the lines after it.
     triples = []
     seen_header = False
     for line in lines:
         if "offset" in line.lower():
             seen_header = True
+            inline = _INLINE_TRIPLE_RE.findall(line)
+            if len(inline) > tool:
+                x, y, z = inline[tool]
+                return (float(x), float(y), float(z))
             triples = []
             continue
         if not seen_header:

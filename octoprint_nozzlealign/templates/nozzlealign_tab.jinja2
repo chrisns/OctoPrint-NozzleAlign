@@ -15,7 +15,19 @@
     </div>
 
     <div class="span5">
-      <h4>Calibration</h4>
+      <h4>Step 1: find the camera</h4>
+      <p class="muted">
+        This homes the machine, then moves the toolhead until the camera can see
+        the nozzle move. It works out where the camera is and how high to sit
+        above it. You do not enter any coordinates.
+      </p>
+      <p data-bind="text: cameraText, visible: cameraText" class="text-success"></p>
+      <div class="btn-group">
+        <button class="btn" data-bind="click: discover,
+                enable: !running()">Find the camera</button>
+      </div>
+
+      <h4>Step 2: measure the offset</h4>
       <p data-bind="text: cameraWarning, visible: cameraWarning"
          class="text-error"></p>
       <div class="btn-group">

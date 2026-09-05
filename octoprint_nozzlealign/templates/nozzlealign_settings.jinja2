@@ -19,9 +19,9 @@
   </div>
 
   <h4>Camera position on the bed</h4>
-  <div class="alert alert-error">
-    The routine lowers the nozzle onto the camera. A wrong Z breaks the camera.
-    Jog the nozzle over the camera by hand first, then copy the coordinates here.
+  <div class="alert">
+    Use "Find the camera" on the Nozzle Align tab. It fills these in for you.
+    Only edit them by hand if the search fails.
   </div>
   <div class="control-group">
     <label class="control-label">X, Y, Z</label>
@@ -47,6 +47,47 @@
     <div class="controls">
       <input type="checkbox"
              data-bind="checked: settings.plugins.nozzlealign.home_first">
+    </div>
+  </div>
+
+  <h4>Finding the camera</h4>
+  <div class="control-group">
+    <label class="control-label">Search height</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.search_z">
+      <span class="help-block">
+        The height the search starts from. It must clear everything on the bed.
+      </span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Search centre and span</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.search_centre_x">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.search_centre_y">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.search_span_mm">
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Lowest allowed Z</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.min_z">
+      <span class="help-block">
+        A hard floor. The search also measures where the lens is and stops above
+        it, so it normally stops before this.
+      </span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Clearance above the lens</label>
+    <div class="controls">
+      <input type="number" step="0.5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.lens_clearance_mm">
     </div>
   </div>
 
@@ -81,10 +122,22 @@
     <label class="control-label">Strategy</label>
     <div class="controls">
       <select data-bind="value: settings.plugins.nozzlealign.strategy">
+        <option value="motion">motion</option>
         <option value="contour">contour</option>
         <option value="hough">hough</option>
         <option value="template">template</option>
       </select>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Motion probe (mm)</label>
+    <div class="controls">
+      <input type="number" step="0.1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.motion_probe_mm">
+      <span class="help-block">
+        The motion strategy finds the nozzle by nudging it and watching which
+        pixels change. It needs no appearance settings at all.
+      </span>
     </div>
   </div>
   <div class="control-group">

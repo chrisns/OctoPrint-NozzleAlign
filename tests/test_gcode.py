@@ -63,3 +63,18 @@ def test_parse_offset_unreadable():
 
 def test_format_offset_command():
     assert format_offset_command(1, 26.0, -0.125) == "M218 T1 X26.000 Y-0.125"
+
+
+def test_parse_offset_from_snapmaker_inline_m218():
+    """Snapmaker answers a bare M218 with every triple on the header line."""
+    lines = [
+        "echo:Hotend offsets: 0.00,0.00,0.000 25.20,0.32,-0.891",
+        "ok",
+    ]
+    assert parse_hotend_offset(lines, tool=1) == (25.2, 0.32, -0.891)
+    assert parse_hotend_offset(lines, tool=0) == (0.0, 0.0, 0.0)
+
+
+def test_parse_offset_inline_needs_enough_triples():
+    lines = ["echo:Hotend offsets: 0.00,0.00,0.000"]
+    assert parse_hotend_offset(lines, tool=1) is None

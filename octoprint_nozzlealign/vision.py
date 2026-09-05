@@ -225,6 +225,145 @@ def _subpixel_peak(surface, x, y):
     return dx, dy
 
 
+# --------------------------------------------------------------------------
+# motion based location
+# --------------------------------------------------------------------------
+
+
+def locate_by_motion(frame_a, frame_b, threshold=4.0, min_area=60,
+                     min_circularity=0.25, max_extent=0.4):
+    """Find the nozzle in two frames taken either side of a known move.
+
+    The nozzle is the only thing in the picture that moves, so subtracting the
+    two frames isolates it without any model of what a nozzle looks like.  This
+    works whether the nozzle is darker or brighter than its background, so it
+    needs no tuning before the camera has ever seen a nozzle.
+
+    Returns ``(position_in_a, position_in_b, details)``.
+    """
+    _require_cv2()
+    a = np.asarray(frame_a, dtype=np.float32)
+    b = np.asarray(frame_b, dtype=np.float32)
+    if a.shape != b.shape:
+        raise DetectionError("the two frames are different sizes")
+    difference = cv2.GaussianBlur(a - b, (9, 9), 0)
+    noise = float(np.median(np.abs(difference - np.median(difference)))) * 1.4826
+    level = max(threshold, threshold * noise)
+
+    positive = _best_blob(difference > level, min_area, min_circularity, max_extent)
+    negative = _best_blob(difference < -level, min_area, min_circularity, max_extent)
+    if positive is None or negative is None:
+        raise DetectionError(
+            "no moving object found; the nozzle may be outside the field of view"
+        )
+
+    # Decide which blob holds the nozzle in frame a.  At the nozzle's position
+    # in a, frame a shows the nozzle; at its position in b, frame a shows the
+    # background.  So the blob whose pixels differ most from the background in
+    # frame a is the one that holds the nozzle in a.
+    background = float(np.median(a))
+    lift_positive = abs(_masked_mean(a, positive["mask"]) - background)
+    lift_negative = abs(_masked_mean(a, negative["mask"]) - background)
+    if lift_positive >= lift_negative:
+        in_a, in_b = positive, negative
+    else:
+        in_a, in_b = negative, positive
+
+    details = dict(
+        area_a=in_a["area"],
+        area_b=in_b["area"],
+        radius=in_a["radius"],
+        circularity=in_a["circularity"],
+        contrast=float(max(lift_positive, lift_negative)),
+        noise=noise,
+    )
+    return in_a["centre"], in_b["centre"], details
+
+
+def _best_blob(mask, min_area, min_circularity=0.25, max_extent=0.4):
+    """The most nozzle shaped moving region in a mask.
+
+    Size alone is the wrong test.  Moving the toolhead also moves the gantry
+    beam, which paints a long thin sliver of change with a large area.  A nozzle
+    paints a compact blob, so the score rewards area and roundness together and
+    rejects anything that spans a large part of the frame.
+    """
+    height, width = mask.shape
+    binary = mask.astype(np.uint8) * 255
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    best = None
+    best_score = 0.0
+    for contour in contours:
+        area = float(cv2.contourArea(contour))
+        if area < min_area:
+            continue
+        x, y, w, h = cv2.boundingRect(contour)
+        if w > width * max_extent or h > height * max_extent:
+            continue
+        perimeter = cv2.arcLength(contour, True)
+        if perimeter <= 0:
+            continue
+        circularity = min(1.0, 4.0 * math.pi * area / (perimeter * perimeter))
+        if circularity < min_circularity:
+            continue
+        score = area * circularity
+        if score > best_score:
+            best_score = score
+            best = (contour, area, circularity)
+    if best is None:
+        return None
+    contour, area, circularity = best
+    moments = cv2.moments(contour)
+    if moments["m00"] == 0:
+        return None
+    centre = (moments["m10"] / moments["m00"], moments["m01"] / moments["m00"])
+    _, radius = cv2.minEnclosingCircle(contour)
+    filled = np.zeros(mask.shape, dtype=np.uint8)
+    cv2.drawContours(filled, [contour], -1, 1, thickness=-1)
+    return dict(
+        centre=centre, area=area, radius=float(radius),
+        circularity=circularity, mask=filled.astype(bool),
+    )
+
+
+def _masked_mean(frame, mask):
+    values = frame[mask]
+    if values.size == 0:
+        return 0.0
+    return float(values.mean())
+
+
+def sharpness(frame, centre=None, size=200):
+    """Variance of the Laplacian, which peaks when the image is in focus."""
+    _require_cv2()
+    image = np.clip(frame, 0, 255).astype(np.uint8)
+    if centre is not None:
+        half = size // 2
+        x, y = int(centre[0]), int(centre[1])
+        y0 = max(0, y - half)
+        y1 = min(image.shape[0], y + half)
+        x0 = max(0, x - half)
+        x1 = min(image.shape[1], x + half)
+        if y1 - y0 >= 16 and x1 - x0 >= 16:
+            image = image[y0:y1, x0:x1]
+    return float(cv2.Laplacian(image, cv2.CV_64F).var())
+
+
+def cut_template(frame, centre, size=96):
+    """Take a square patch around a point, for later template matching."""
+    half = int(size) // 2
+    x, y = int(centre[0]), int(centre[1])
+    y0 = max(0, y - half)
+    y1 = min(frame.shape[0], y + half)
+    x0 = max(0, x - half)
+    x1 = min(frame.shape[1], x + half)
+    patch = frame[y0:y1, x0:x1]
+    if patch.shape[0] < 16 or patch.shape[1] < 16:
+        raise DetectionError("the nozzle is too close to the edge of the frame")
+    return np.array(patch, dtype=np.float32)
+
+
 def detect_tip(frame, strategy="contour", template=None, **options):
     """Locate the nozzle tip and return (x, y, confidence, details)."""
     if strategy == "template":

@@ -36,6 +36,20 @@ $(function () {
             self.log(self.log() + line + "\n");
         };
 
+        self.cameraText = ko.observable("");
+
+        self.discover = function () {
+            self.log("");
+            self.result(null);
+            OctoPrint.simpleApiCommand("nozzlealign", "discover", {})
+                .done(function () {
+                    self.running(true);
+                })
+                .fail(function (response) {
+                    self.append("error: " + errorText(response));
+                });
+        };
+
         self.run = function () {
             self.log("");
             self.result(null);
@@ -121,7 +135,19 @@ $(function () {
                 self.refreshPreview();
             } else if (data.type === "done") {
                 self.running(false);
-                self.result(data.result);
+                if (data.result && data.result.camera_z !== undefined) {
+                    var c = data.result;
+                    self.cameraWarning("");
+                    self.cameraText(
+                        "Camera found at X" + c.camera_x.toFixed(2) +
+                        " Y" + c.camera_y.toFixed(2) +
+                        ", focus at Z" + c.camera_z.toFixed(2) +
+                        " (" + c.px_per_mm.toFixed(1) + " px/mm, turned " +
+                        c.rotation_deg.toFixed(1) + " degrees from the machine axes)"
+                    );
+                } else {
+                    self.result(data.result);
+                }
                 self.append("finished");
             } else if (data.type === "failed") {
                 self.running(false);
