@@ -33,6 +33,8 @@ def discovery_config(**overrides):
         raster_spacing_x=90.0,
         raster_spacing_y=60.0,
         search_probe_mm=3.0,
+        map_check_scale=0.7,
+        map_check_tolerance=0.25,
         coarse_step=10.0,
         fine_step=2.0,
         min_z=12.0,
@@ -384,3 +386,82 @@ def test_full_calibration_ignores_a_stale_stored_position(monkeypatch):
     assert result["camera"]["camera_x"] == pytest.approx(actual[0], abs=0.5)
     assert result["camera"]["camera_y"] == pytest.approx(actual[1], abs=0.5)
     assert result["correction"] == pytest.approx([-error[0], -error[1]], abs=0.03)
+
+
+# -- rejecting things that move but are not the toolhead --------------------
+
+
+class SwingingTube(PerspectiveCamera):
+    """A camera that can only see the filament tube, not the toolhead.
+
+    This is what the real rig did on 2026-09-05. Something moved whenever the
+    machine moved, and two probe moves happily produced a pixel map from it, but
+    it was a bowden tube swinging overhead. A tube does not travel in proportion
+    to the commanded move, so a third move in a new direction exposes it.
+    """
+
+    def tip_pixel(self):
+        physical = self.machine.physical_xy()
+        offset = physical - self.camera_xy
+        # a hanging tube swings: it lags, saturates, and barely follows Y
+        swing = np.array([
+            18.0 * np.tanh(offset[0] / 25.0),
+            4.0 * np.tanh(offset[1] / 40.0),
+        ])
+        return self.centre_px + self.matrix().dot(swing)
+
+
+def test_a_swinging_tube_is_not_mistaken_for_the_toolhead(monkeypatch):
+    bridge = FakeBridge()
+    camera = SwingingTube(bridge, CAMERA_XY, lens_z=LENS_Z, focus_z=FOCUS_Z)
+    monkeypatch.setattr(
+        vision, "average_frames",
+        lambda url, count=1, timeout=1.0, settle=0: camera.frame(),
+    )
+    job = discovery.DiscoveryRoutine(
+        bridge, discovery_config(), Recorder(), NullLogger()
+    )
+    with pytest.raises(discovery.CalibrationError) as caught:
+        job._execute()
+    # however it gives up, it must point at the camera rather than report a
+    # confident answer derived from the tube
+    assert "camera" in str(caught.value)
+
+
+def test_the_map_check_rejects_a_tube_directly(monkeypatch):
+    """The third move is what exposes it, so test that step on its own."""
+    bridge = FakeBridge()
+    camera = SwingingTube(bridge, CAMERA_XY, lens_z=LENS_Z, focus_z=FOCUS_Z)
+    monkeypatch.setattr(
+        vision, "average_frames",
+        lambda url, count=1, timeout=1.0, settle=0: camera.frame(),
+    )
+    job = discovery.DiscoveryRoutine(
+        bridge, discovery_config(), Recorder(), NullLogger()
+    )
+    # stand well off to the side, where a swinging tube stops tracking the move
+    bridge.position_xyz = [CAMERA_XY[0] + 30.0, CAMERA_XY[1] + 20.0, 60.0]
+    with pytest.raises(vision.DetectionError) as caught:
+        job._pixel_map_here(3.0)
+    assert "does not track the toolhead" in str(caught.value)
+
+
+def test_the_map_check_passes_for_a_real_toolhead(monkeypatch):
+    """The same check must not reject a camera that is aimed properly."""
+    bridge = FakeBridge()
+    camera = PerspectiveCamera(bridge, CAMERA_XY, lens_z=LENS_Z, focus_z=FOCUS_Z)
+    monkeypatch.setattr(
+        vision, "average_frames",
+        lambda url, count=1, timeout=1.0, settle=0: camera.frame(),
+    )
+    job = discovery.DiscoveryRoutine(
+        bridge, discovery_config(), Recorder(), NullLogger()
+    )
+    bridge.position_xyz = [CAMERA_XY[0], CAMERA_XY[1], 60.0]
+    matrix, _, _, _ = job._pixel_map_here(3.0)
+    assert geometry_scale(matrix) > 0
+
+
+def geometry_scale(matrix):
+    from nozzlealign_pkg import geometry
+    return geometry.pixels_per_mm(matrix)

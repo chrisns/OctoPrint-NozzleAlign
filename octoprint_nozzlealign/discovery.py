@@ -43,9 +43,39 @@ class DiscoveryRoutine(CalibrationRoutine):
         matrix = geometry.build_pixel_map_from_shifts(
             probe_x["shift"], probe_y["shift"], distance
         )
+        self._verify_map(matrix, distance)
         position = np.array(probe_x["position"], dtype=float)
         compact = bool(probe_x["compact"] and probe_y["compact"])
         return matrix, position, compact, probe_x["details"]
+
+    def _verify_map(self, matrix, distance):
+        """Check that whatever is moving really does track the toolhead.
+
+        Something moves in the picture whenever the machine moves, and it is not
+        always the toolhead.  A filament tube swinging overhead moves, and so do
+        reflections, but neither of them travels in proportion to the commanded
+        move.  Two probes alone cannot tell the difference, because any two
+        displacements define a matrix.
+
+        A third move in a direction the first two did not use settles it.  Its
+        predicted displacement follows from the map, and only a rigid object
+        rigidly attached to the toolhead will match it.
+        """
+        step = float(distance) * float(self._cfg["map_check_scale"])
+        probe = self._motion_probe(dx=step, dy=-step)
+        predicted = np.asarray(matrix, dtype=float).dot(np.array([step, -step]))
+        observed = np.asarray(probe["shift"], dtype=float)
+        size = float(np.linalg.norm(predicted))
+        if size < 1e-6:
+            raise vision.DetectionError("the pixel map predicts no movement")
+        error = float(np.linalg.norm(observed - predicted)) / size
+        if error > float(self._cfg["map_check_tolerance"]):
+            raise vision.DetectionError(
+                "what moves in the picture does not track the toolhead "
+                "(a third move landed %.0f%% away from where the map predicted). "
+                "The camera may be watching the filament tube, a reflection or "
+                "a shadow rather than the nozzle" % (100.0 * error)
+            )
 
     # -- search -----------------------------------------------------------
 

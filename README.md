@@ -69,6 +69,20 @@ give the direction.
 The pixel map is right in both regimes, because it only depends on how far the
 picture shifted. That is what lets the search steer from a long way off.
 
+### Checking that it is really the toolhead
+
+Something moves in the picture whenever the machine moves, and it is not always
+the toolhead. On the first live run here it was the bowden tube swinging
+overhead. Two probe moves happily produced a pixel map from it, because any two
+displacements define a matrix, and the routine then steered confidently on a
+swinging tube.
+
+So the map is checked with a third move, in a direction the first two did not
+use. Its displacement follows from the map, and only something rigidly attached
+to the toolhead will match the prediction. A tube, a reflection or a shadow will
+not, and the run stops and says so rather than reporting a confident wrong
+answer.
+
 ### Finding the camera
 
 "Find the camera" on the Nozzle Align tab does this.

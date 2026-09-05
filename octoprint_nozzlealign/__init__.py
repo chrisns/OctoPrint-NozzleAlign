@@ -77,6 +77,8 @@ class NozzleAlignPlugin(
             raster_spacing_x=90.0,
             raster_spacing_y=60.0,
             search_probe_mm=3.0,
+            map_check_scale=0.7,
+            map_check_tolerance=0.25,
             coarse_step=10.0,
             fine_step=2.0,
             min_z=12.0,
