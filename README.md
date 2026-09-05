@@ -38,6 +38,47 @@ degrees with a mirrored image.
 The map is rebuilt at every working height, because the scale changes with
 distance from the lens.
 
+### What each axis does to the picture
+
+On an A350 the three axes are not equivalent through a camera that sits on the
+bed, and the difference is what makes the toolhead findable at all.
+
+| Axis | What moves | What the picture does |
+|---|---|---|
+| X | the toolhead | the toolhead slides; the background is still |
+| Y | the bed, and the camera with it | everything slides, near things further |
+| Z | the toolhead | the toolhead expands about the point above the lens |
+
+Depth comes from the Y move. It is a pure camera translation, so a point at
+distance `D` from the lens shifts by `focal * dY / D` pixels. That segments the
+toolhead from the room with no appearance model at all, and it survives blur and
+glare, which an appearance model does not.
+
+The Z move looks equivalent and is not. Every depth then depends on locating the
+point straight above the lens, and patches near that point have almost no radius
+to divide by, so their ratios are noise. It was tried and abandoned.
+
+Two measurement traps, both found the hard way:
+
+- Phase correlation over a tapered window stops being reliable much past a
+  quarter of the window width. Beyond that it does not fail; it returns a
+  saturated shift that looks like a plausible depth and is not one. Keep bed
+  moves small, and check the move against `depth.max_reliable_move_mm`.
+- A window covering the whole frame mixes the toolhead with the room behind it,
+  and the scale it reports depends on how much of each it caught. Measure over
+  the toolhead, where the window is a single depth.
+
+### Measured on the machine
+
+For the OV9726 at 1280x800, on 2026-09-05:
+
+- 8.65 px/mm at Z150, from high confidence patches over the toolhead.
+- Focal length about 1339 px.
+- `1 / scale` is a straight line in Z crossing zero near the bed, so the lens
+  plane sits at about Z-5.
+- At Z60 that gives 19 px/mm, which is 0.05 mm per pixel. There is no need to go
+  near the camera to measure a nozzle offset well.
+
 ### Finding the nozzle
 
 The plugin nudges the toolhead and subtracts the two frames. Nothing else in the
