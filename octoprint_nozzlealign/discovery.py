@@ -49,85 +49,49 @@ class DiscoveryRoutine(CalibrationRoutine):
 
     # -- search -----------------------------------------------------------
 
-    def _raster_points(self):
-        """Serpentine sweep of the whole bed, so the camera can be anywhere."""
+    def _candidate_points(self):
+        """Where to stand while looking for the camera.
+
+        The middle of the bed comes first, because the camera's field of view is
+        wide enough that the toolhead is usually already in it.  After that the
+        bed is covered in a serpentine sweep, spaced closely enough that the
+        camera cannot fall between two points.
+        """
         cfg = self._cfg
         x0, x1 = float(cfg["search_x_min"]), float(cfg["search_x_max"])
         y0, y1 = float(cfg["search_y_min"]), float(cfg["search_y_max"])
-        step_x = max(5.0, float(cfg["raster_spacing_x"]))
-        step_y = max(5.0, float(cfg["raster_spacing_y"]))
-        columns = _span(x0, x1, step_x)
-        rows = _span(y0, y1, step_y)
-        points = []
+        first = ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+        columns = _span(x0, x1, max(5.0, float(cfg["raster_spacing_x"])))
+        rows = _span(y0, y1, max(5.0, float(cfg["raster_spacing_y"])))
+        points = [first]
         for index, y in enumerate(rows):
             ordered = columns if index % 2 == 0 else list(reversed(columns))
             points += [(x, y) for x in ordered]
         return points
 
-    def _sweep_for_the_camera(self):
-        """Sweep the bed and pick the spot where the camera can see the toolhead.
+    def _search_for_the_nozzle(self, distance):
+        """Stand at each candidate point until the camera can see the toolhead.
 
-        The background is the same in every frame of the sweep, and the toolhead
-        appears in only a few of them, so the per-pixel median across the sweep
-        is the empty view.  Scoring each frame against that median needs no
-        parking position and no reference shot.  The score is weighted towards
-        the middle of the image, because the aim is to end up over the camera
-        rather than merely somewhere in its field of view.
+        One probe move is enough to answer "can the camera see anything move
+        here", and it is the only test that actually settles it.  Comparing
+        still frames looked cheaper, but it does not work: this camera sees the
+        toolhead from most of the bed, so there is no empty view to compare a
+        frame against.
         """
-        cfg = self._cfg
-        points = self._raster_points()
-        frames = []
+        points = self._candidate_points()
+        last_error = None
         for index, (x, y) in enumerate(points):
             self._check_abort()
             self._progress(
-                "sweep",
-                "sweeping the bed, point %d of %d at X%.0f Y%.0f"
-                % (index + 1, len(points), x, y),
-            )
-            self._move_absolute(x=x, y=y)
-            frame = vision.average_frames(
-                cfg["snapshot_url"],
-                count=int(cfg["raster_frame_average"]),
-                timeout=float(cfg["http_timeout"]),
-            )
-            frames.append(vision.thumbnail(frame, int(cfg["raster_thumb_px"])))
-
-        scores = vision.score_against_median(frames)
-        # An absolute threshold would depend on the lens, the lighting and the
-        # thumbnail size, so the cut is taken from the spread of the sweep
-        # itself: a point counts when it stands out from the rest of the sweep.
-        array = np.asarray(scores, dtype=float)
-        baseline = float(np.median(array))
-        spread = float(np.median(np.abs(array - baseline))) * 1.4826
-        cut = baseline + float(cfg["sweep_score_sigma"]) * max(spread, 1e-9)
-        ranked = sorted(range(len(points)), key=lambda i: -scores[i])
-        best = ranked[0]
-        self._progress(
-            "sweep",
-            "the camera sees the toolhead best at X%.0f Y%.0f "
-            "(score %.4f, background %.4f, cut %.4f)"
-            % (points[best][0], points[best][1], scores[best], baseline, cut),
-        )
-        return [points[i] for i in ranked if scores[i] > cut]
-
-    def _search_for_the_nozzle(self, distance):
-        """Sweep the bed, then measure at the most promising spots in turn."""
-        candidates = self._sweep_for_the_camera()
-        if not candidates:
-            raise CalibrationError(
-                "could not see the nozzle: the toolhead changed the picture "
-                "nowhere on the bed. Check that the camera is plugged in, "
-                "points up, and that its stream is live"
-            )
-
-        last_error = None
-        for index, (x, y) in enumerate(candidates[: int(self._cfg["sweep_tries"])]):
-            self._check_abort()
-            self._progress(
                 "search",
-                "measuring at X%.1f Y%.1f (candidate %d)" % (x, y, index + 1),
+                "looking from X%.0f Y%.0f (%d of %d)" % (x, y, index + 1, len(points)),
             )
             self._move_absolute(x=x, y=y)
+            try:
+                self._motion_probe(dx=distance)
+            except vision.DetectionError as exception:
+                last_error = str(exception)
+                continue
             try:
                 matrix, origin, compact, _ = self._pixel_map_here(distance)
             except (vision.DetectionError, geometry.GeometryError) as exception:
@@ -143,8 +107,9 @@ class DiscoveryRoutine(CalibrationRoutine):
             )
             return matrix, origin
         raise CalibrationError(
-            "the sweep found the camera but no move could be measured there "
-            "(%s); check that the camera is in focus" % last_error
+            "could not see the nozzle: nothing moved in the picture from "
+            "anywhere on the bed (%s). Check that the camera is plugged in, "
+            "points up, and that its stream is live" % last_error
         )
 
     def _centre_here(self, matrix, target, distance, label):
@@ -160,7 +125,7 @@ class DiscoveryRoutine(CalibrationRoutine):
             )
             if error <= tolerance:
                 return
-            if error > float(self._cfg["max_correction_mm"]) * 20:
+            if error > float(self._cfg["coarse_max_correction_mm"]):
                 raise CalibrationError(
                     "%s wants a %.1f mm correction, which looks wrong" % (label, error)
                 )

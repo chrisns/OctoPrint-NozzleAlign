@@ -74,13 +74,16 @@ picture shifted. That is what lets the search steer from a long way off.
 "Find the camera" on the Nozzle Align tab does this.
 
 1. Home, then rise to the search height.
-2. Sweep the whole bed, one frame per point. Every frame shares the same static
-   background and the toolhead appears in only a few of them, so the per-pixel
-   median across the sweep is the empty view. Scoring each frame against that
-   median needs no parking position and no reference shot. The cut comes from
-   the spread of the sweep itself, so it does not depend on the lens or the
-   lighting.
-3. Measure at the best few spots, then steer the toolhead to the image centre. This is coarse: it works on the whole
+2. Stand at the middle of the bed and nudge the toolhead. The camera's field of
+   view is wide, about 117 mm at 80 mm distance on this machine, so the toolhead
+   is usually already in it. If nothing moves in the picture, work across the
+   bed in a serpentine sweep until something does.
+
+   Comparing still frames against the median of a sweep looked cheaper and was
+   tried. It does not work. This camera sees the toolhead from most of the bed,
+   so the median is not an empty view and the score has no clear peak. One probe
+   move is the only test that settles it.
+3. Steer the toolhead to the image centre. This is coarse: it works on the whole
    toolhead, because at that range the nozzle has not separated yet.
 4. Step down, re-measuring and re-centring at each height. As the view narrows,
    the nozzle separates and the measurement becomes fine.
