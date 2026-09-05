@@ -1,0 +1,60 @@
+<div id="nozzlealign_tab">
+  <div class="row-fluid">
+    <div class="span7">
+      <div class="nozzlealign-view">
+        <img data-bind="attr: {src: overlayUrl}" class="nozzlealign-frame">
+      </div>
+      <p class="muted">
+        The blue crosshair is the target. The red circle is the detected tip.
+      </p>
+      <div class="btn-group">
+        <button class="btn" data-bind="click: refreshPreview">Refresh</button>
+        <button class="btn" data-bind="click: toggleLive,
+                css: {'btn-primary': live}">Live</button>
+      </div>
+    </div>
+
+    <div class="span5">
+      <h4>Calibration</h4>
+      <p data-bind="text: cameraWarning, visible: cameraWarning"
+         class="text-error"></p>
+      <div class="btn-group">
+        <button class="btn btn-primary" data-bind="click: run,
+                enable: !running() &amp;&amp; !cameraWarning()">Measure offset</button>
+        <button class="btn btn-danger" data-bind="click: abort,
+                enable: running">Stop</button>
+      </div>
+
+      <h5>Progress</h5>
+      <pre class="nozzlealign-log" data-bind="text: log"></pre>
+
+      <!-- ko if: result -->
+      <h5>Result</h5>
+      <table class="table table-condensed">
+        <tr><th>Stored T1 offset</th>
+            <td data-bind="text: storedOffsetText"></td></tr>
+        <tr><th>Nozzle 1 needed</th>
+            <td data-bind="text: correctionText"></td></tr>
+        <tr><th>Residual after centring</th>
+            <td data-bind="text: residualText"></td></tr>
+        <tr><th>Image scale</th>
+            <td data-bind="text: scaleText"></td></tr>
+      </table>
+
+      <p>
+        The sign of a Marlin hotend offset is not documented for this toolhead,
+        so both candidates are shown. Write one, then measure again. The
+        correction must fall towards zero. If it doubles, write the other one.
+      </p>
+      <div class="btn-group">
+        <button class="btn" data-bind="click: applyPlus, text: plusLabel"></button>
+        <button class="btn" data-bind="click: applyMinus, text: minusLabel"></button>
+      </div>
+      <p class="muted">
+        Prefer the slicer instead? Put the numbers above into the tool offset
+        there and write nothing to the firmware.
+      </p>
+      <!-- /ko -->
+    </div>
+  </div>
+</div>

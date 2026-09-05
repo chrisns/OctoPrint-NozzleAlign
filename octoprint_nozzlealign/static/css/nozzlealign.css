@@ -1,0 +1,18 @@
+.nozzlealign-view {
+    background: #222;
+    display: inline-block;
+    line-height: 0;
+    max-width: 100%;
+}
+
+.nozzlealign-frame {
+    max-width: 100%;
+    height: auto;
+}
+
+.nozzlealign-log {
+    max-height: 18em;
+    overflow-y: auto;
+    font-size: 11px;
+    white-space: pre-wrap;
+}

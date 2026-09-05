@@ -1,0 +1,2583 @@
+* * *
+
+Snapmaker 2.0 G-code Commands
+
+This article provides a list of Snapmaker 2.0 G-code commands.
+
+* * *
+
+Page Contents
+
+Preamble
+
+Supported And Verified Commands
+
+G0 - G1 - Linear Move
+
+G4 - Dwell
+
+G20 - Inch Units
+
+G21 - Millimeter Units
+
+G28 - Auto Home
+
+G42 - Move to mesh coordinate
+
+G54 - G59.3 - Workspace Coordinate System
+
+G90 - Absolute Positioning
+
+G91 - Relative Positioning
+
+G92 - Set Position
+
+G1029 (SM2.0) - Operations Related To Auto Bed Leveling
+
+M3/M4 (Modified) - CNC/Laser On
+
+M5 - CNC/Laser Off
+
+M7 - M9 (Modified) - Coolant/Air Assist Controls
+
+M76 (Modified) - Pause Print Job
+
+M82 - E Absolute
+
+M83 - E Relative
+
+M92 - Set Axis Steps-per-unit
+
+M101 (SM2.0) - FreeRTOS Tasks Info
+
+M104 - Set Hotend Temperature
+
+M105 - Report Temperatures
+
+M106 - Set Fan Speed
+
+M107 - Fan Off
+
+M108 - Break and Continue
+
+M109 (Modified) - Wait for Hotend Temperature
+
+M111 - Debug Level
+
+M114 (Modified) - Get Current Position
+
+M115 - Firmware Info
+
+M118 - Serial print
+
+M119 - Endstop States
+
+M140 - Set Bed Temperature
+
+M155 - Temperature Auto-Report
+
+M190 - Wait for Bed Temperature
+
+M201 - Prin/Travel Move Limits
+
+M203 - Set Max Feedrate
+
+M204 - Set Starting Acceleration
+
+M205 (Modified) - Set Advanced Settings
+
+M211 - Software Endstops
+
+M220 - Set Feedrate Percentage
+
+M221 - Set Flow Percentage
+
+M301 - Set Hotend PID
+
+M302 - Cold Extrude
+
+M400 - Finish Moves
+
+M412 - Filament Runout
+
+M420 (Modified) - Bed Leveling State
+
+M425 (Modified) - Backlash compensation
+
+M500 - Save Settings
+
+M501 - Restore Settings
+
+M502 - Factory Reset
+
+M503 - Report Settings
+
+M504 - Validate EEPROM contents
+
+M600 (Modified) - Trigger Filament Runout Event
+
+M900 (Modified) - Linear Advance Factor
+
+M1005 (SM2.0) - Get Basic Info of Controller and Modules
+
+M1006 (SM2.0) - Get Toolhead Details
+
+M1010 S3 (SM2.0) - Set Enclosure Light
+
+M1010 S4 (SM2.0) - Set Enclosure Fan
+
+M1011 F (SM2.0) - Set Purifier Fan
+
+M1011 R|G|B (SM2.0) - Set Purifier Light
+
+M2000 L23 (SM2.0) - Set Laser Branch Power Supply|Half Power Mode
+
+M2000 L30 (SM2.0) - Set Laser Module Standby Mode
+
+Examples
+
+M2002 T2 (SM2.0) - Set Laser Fan
+
+M2002 T3 (SM2.0) - Set Laser Crosshair
+
+T0-T1 (Modified) - Select The Nozzle
+
+Supported But Unverified Commands
+
+Commands
+
+Incompatible Or Unadapted Commands
+
+Commands
+
+Talk
+
+View Discussion
+
+Last edited by
+
+Administrator
+
+08/23/2024
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#preamble)
+ Preamble
+=========================================================================================================
+
+> Here are some important notes that you must read before jumping to the detailed commands references.
+
+1.  The Snapmaker 2.0 firmware is based on Marlin v2.0.x. Therefore, its supported G-code commands are mostly the same as the official G-code commands of Marlin. For specifics, please refer to [Marlin official documentation](https://marlinfw.org/meta/gcode)
+    .
+2.  This article is based on 2.0 v1.20.2 and later versions. If there are any discrepancies, it is recommended to upgrade the Snapmaker 2.0 firmware to the latest version.
+3.  This article describes the Snapmaker 2.0 G-code commands by dividing them into three sub-commands:  
+    (1) Supported And Verified Commands -- recommended for use.  
+    (2) Supported But Unverified Commands -- not recommended for use.  
+    (3) Incompatible Or Unadapted Commands -- do not use.
+4.  Marking Instructions:  
+    (1) For commands that have both the same name and behavior as those supported by Marlin, the command description will also be almost consistent with Marlin, without any special markings. For example: `G4`.  
+    (2) For commands that have the same name as those supported by Marlin but exhibit different behavior, the command description will be marked with 'Modified'. For example: `M3/M4(Modified)`.  
+    (3) For commands that are unique to Snapmaker 2.0, the command description will be marked with 'SM2.0'. For example: `G1029 (SM2.0)`.
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#supported-and-verified-commands)
+ Supported And Verified Commands
+=======================================================================================================================================================
+
+> The commands described in this section are all normally supported and have been rigorously tested and verified. They are recommended for use.
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g0-g1-linear-move)
+ G0 - G1 - Linear Move
+-------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description)
+ Description
+
+*   The `G0` and `G1` commands add a linear move to the queue to be performed after all previous moves are completed. These commands yield control back to the command parser as soon as the move is queued, but they may delay the command parser while awaiting a slot in the queue.
+*   A linear move traces a straight line from one point to another, ensuring that the specified axes will arrive simultaneously at the given coordinates (by linear interpolation). The speed may change over time following an acceleration curve, according to the acceleration and jerk settings of the given axes.
+*   A command like `G1 F1000` sets the feedrate for all subsequent moves.
+*   By convention, most G-code generators use `G0` for non-extrusion movements (those without the E axis) and `G1` for moves that include extrusion. This is meant to allow a kinematic system to, optionally, do a more rapid uninterpolated movement requiring much less calculation.
+*   For Cartesians and Deltas the `G0` (rapid linear movement) command is (and must be) a direct alias for `G1` (rapid movement). On SCARA machines G0 does a fast non-linear move. Marlin 2.0 introduces an option to maintain a separate default feedrate for `G0`. _Note: Slicers tend to override firmware feedrates!_
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes)
+ Notes
+
+*   Coordinates are given in millimeters by default.
+*   In Relative Mode (`G91`) all coordinates are interpreted as relative, adding onto the previous position.
+*   In Extruder Relative Mode (`M83`) the E coordinate is interpreted as relative, adding onto the previous E position.
+*   A single linear move may generate several smaller moves to the planner due to kinematics and bed leveling compensation.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage)
+ Usage
+
+    G0 [E<pos>] [F<rate>] [S<power>] [X<pos>] [Y<pos>] [Z<pos>] ...
+    G1 [E<pos>] [F<rate>] [S<power>] [X<pos>] [Y<pos>] [Z<pos>] ...
+
+Copy
+
+*   Parameters
+    *   E: An absolute or relative coordinate on the E (extruder) axis (in current units). The E axis describes the position of the filament in terms of input to the extruder feeder.
+    *   F: The maximum movement rate of the movement between the start and end point. The feedrate set here applies to subsequent moves that omit this parameter.
+    *   S: Set the laser power for the move.
+    *   X: An absolute or relative coordinate on the X axis (in current units).
+    *   Y: An absolute or relative coordinate on the Y axis (in current units).
+    *   Z: An absolute or relative coordinate on the Z axis (in current units).
+    *   B: An absolute or relative coordinate on the B axis (in current units).
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples)
+ Examples
+
+*   The most basic move sets a feedrate and moves the tool to the given position.
+    
+        G0 X12         ; Move to 12mm on the X axis
+        G0 F1500       ; Set the feedrate to 1500 mm/min
+        G0 X90.6 Y13.8 ; Move to 90.6mm on the X axis and 13.8mm on the Y axis
+    
+    Copy
+    
+*   There are some caveats related with feedrates. Consider the following:
+    
+        G1 F1500           ; Set the feedrate to 1500 mm/min
+        G92 E0
+        G1 X50 Y25.3 E22.4 ; Move while extruding
+    
+    Copy
+    
+    *   In the above example the feedrate is set to 1500 mm/min, then the tool is moved 50mm on the X axis and 25.3mm on the Y axis while extruding 22.4mm of filament between the two points.
+    
+        G1 F1500
+        G92 E0
+        G1 X50 Y25.3 E22.4 F3000
+    
+    Copy
+    
+    *   However, in the above example, we set a feedrate of 1500 mm/min on line 1 then do the move described above, accelerating to a feedrate of 3000 mm/min (if possible). The extrusion will accelerate along with the X and Y movement, so everything stays synchronized.
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g4-dwell)
+ G4 - Dwell
+-----------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-1)
+ Description
+
+*   Dwell pauses the command queue and waits for a period of time.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-1)
+ Notes
+
+*   If both S and P are included, S takes precedence.
+*   `G4` with no arguments is effectively the same as `M400`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-1)
+ Usage
+
+    G4 [P<time(ms)>] [S<time(sec)>]
+
+Copy
+
+*   Parameters
+    *   P ：Amount of time to dwell.
+    *   S ：Amount of time to dwell.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-1)
+ Examples
+
+    G4 P500 ; Dwell for 1/2 second
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g20-inch-units)
+ G20 - Inch Units
+-----------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-2)
+ Description
+
+*   Set units to inches. In this mode, all positions, offsets, rates, accelerations, etc., specified in G-code parameters are interpreted as inches.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-2)
+ Usage
+
+    G20
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-2)
+ Examples
+
+    G20 ; set units to inches
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g21-millimeter-units)
+ G21 - Millimeter Units
+-----------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-3)
+ Description
+
+*   Set units to millimeters. In this mode, all positions, offsets, rates, accelerations, etc., specified in G-code parameters are interpreted as millimeters.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-3)
+ Usage
+
+    G21
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-3)
+ Examples
+
+    G21 ; set units to millimeters
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g28-auto-home)
+ G28 - Auto Home
+---------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-4)
+ Description
+
+*   When you first start up your machine, it has no idea where the toolhead is positioned, so Marlin needs to use a procedure called “homing” to establish a known position. To do this, it moves each axis towards one end of its track until it triggers a switch, commonly called an “endstop”. Marlin knows where the endstops are, so once all the endstops have been triggered, the position is known.
+*   The `G28` command is used to home one or more axes. The default behavior with no parameters is to home all axes.
+*   The position is easy to lose when the steppers are turned off, so homing may be required or advised after the machine has been sitting idle for a period of time.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-2)
+ Notes
+
+*   To prevent collisions, the machine will only home all axes for 3DP scenes.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-4)
+ Usage
+
+    G28 [O] [X] [Y] [Z]
+
+Copy
+
+*   Parameters
+    *   O: Flag to skip homing if the position is already trusted.
+    *   X: Flag to home the X axis.
+    *   Y: Flag to home the Y axis.
+    *   Z: Flag to home the Z axis.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-4)
+ Examples
+
+*   The most-used form of this command is to home all axes:
+    
+        G28    ; Home all axes
+    
+    Copy
+    
+        G28 X Z ; Home the X and Z axes
+    
+    Copy
+    
+        G28 O ; Home all "untrusted" axes
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g42-move-to-mesh-coordinate)
+ G42 - Move to mesh coordinate
+-------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-5)
+ Description
+
+*   The `G42` command moves the nozzle to the location corresponding to a specific coordinate in the bed leveling mesh. It operates similarly to the `G0` and `G1` commands except that the provided coordinates are a mesh row and column instead of an absolute or relative position on the bed.
+*   The `G42` command will determine the bed position that corresponds to the provided mesh row and column and move the nozzle to that position.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-3)
+ Notes
+
+*   Using `M420 V`, the information of the mesh can be obtained.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-5)
+ Usage
+
+    G42 [F<rate>] [I<pos>] [J<pos>]
+
+Copy
+
+*   Parameters
+    *   F: The maximum movement rate of the movement between the start and end point. The feedrate set here applies to subsequent moves that omit this parameter.
+    *   I: The column of the mesh coordinate.
+    *   J: The row of the mesh coordinate.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-5)
+ Examples
+
+*   Move to various points on a 5x5 mesh.
+    
+        G42 I0 J0 ; front left corner
+        G42 I2 J2 ; center
+        G42 I2 J4 ; back center
+        G42 I4 J4 ; back right
+    
+    Copy
+    
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g53-move-in-machine-coordinates)
+ G53 - Move in Machine Coordinates
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-6)
+ Description
+
+*   `G53` applies native workspace to the current move. See `G54` - `G59.3` for workspace coordinate system. In CNC G-code `G53` is a modifier. It precedes a movement command (or other modifiers) on the same line. Marlin also accepts `G53` on a line by itself as the command to return to the native workspace.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-6)
+ Usage
+
+    G53
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-6)
+ Examples
+
+*   Rapid linear move to the machine origin in native space.
+    
+        G53 G0 X0 Y0 Z0
+    
+    Copy
+    
+*   Rapid linear move to absolute coordinate X20 in native space.
+    
+        G53 G1 X20
+    
+    Copy
+    
+*   Use native space
+    
+        G53
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g54-g593-workspace-coordinate-system)
+ G54 - G59.3 - Workspace Coordinate System
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-7)
+ Description
+
+*   A workspace is an XYZ offset to the native machine space. All workspaces default to (0,0,0) at start, or with EEPROM support they may be restored from a previous session. See `G53` for native space.
+    *   G92: used to set the current workspace’s offset.
+    *   G54: use coordinate system 1.
+    *   G55: use coordinate system 2.
+    *   G56: use coordinate system 3.
+    *   G57: use coordinate system 4.
+    *   G58: use coordinate system 5.
+    *   G59: use coordinate system 6.
+    *   G59.1: use coordinate system 7.
+    *   G59.2: use coordinate system 8.
+    *   G59.3: use coordinate system 9.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-4)
+ Notes
+
+*   Between SM2.0 and Luban, as well as between SM2.0's controller and screen, only `G53` and `G54` are recommended for use.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-7)
+ Usage
+
+    G54
+    G55
+    G56
+    G57
+    G58
+    G59
+    G59.1
+    G59.2
+    G59.3
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-7)
+ Examples
+
+*   Use coordinate system 1 and rapid move to workspace offset origin:
+    
+        G54 ; Select workspace 1
+        G0 X0 Y0 X0
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g90-absolute-positioning)
+ G90 - Absolute Positioning
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-8)
+ Description
+
+*   In absolute mode, all coordinates given in G-code are interpreted as positions in the logical coordinate space. This includes the extruder position unless overridden by `M83`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-5)
+ Notes
+
+*   Absolute positioning is the default.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-8)
+ Usage
+
+    G90
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-8)
+ Examples
+
+*   Enable absolute mode.
+
+    G90 ; Set all axes to absolute
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g91-relative-positioning)
+ G91 - Relative Positioning
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-9)
+ Description
+
+*   Set relative position mode. In this mode, all coordinates are interpreted as relative to the last position. This includes the extruder position unless overridden by `M82`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-9)
+ Usage
+
+    G91
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-9)
+ Examples
+
+*   Enable relative mode.
+    
+        G91 ; Set all axes to relative
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g92-set-position)
+ G92 - Set Position
+---------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-10)
+ Description
+
+*   Set the current position to the values specified, and the software endstops are adjusted to preserve the physical movement limits. Thus, you could use `G92` to set the middle of the bed to (0,0,0) and then run .gcode.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-6)
+ Notes
+
+*   Incompatible with `G92.1`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-10)
+ Usage
+
+    G92 [E<pos>] [X<pos>] [Y<pos>] [Z<pos>]
+
+Copy
+
+*   Parameters
+    *   E: New extruder position.
+    *   X: New X axis position.
+    *   Y: New Y axis position.
+    *   Z: New Z axis position.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-10)
+ Examples
+
+*   Specify that the nozzle’s current X position is 10 and the current extruder position is 90.
+    
+        G92 X10 E90
+    
+    Copy
+    
+*   Specify that the nozzle’s current XYZ position is 0, 0, 0.
+    
+        G92 X0 Y0 Z0
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#g1029-sm20-operations-related-to-auto-bed-leveling)
+ G1029 (SM2.0) - Operations Related To Auto Bed Leveling
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-11)
+ Description
+
+*   Operations related to automatic bed leveling.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-7)
+ Notes
+
+*   In general, it is recommended that users perform automatic bed leveling through the calibration page on the screen, rather than directly using the `G1029` command.
+*   In the current version, the operation of directly using the `G1029` command is only applicable to Single Extrusion 3DP.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-11)
+ Usage
+
+    G1029 [P<numbers>] [A] [S]
+
+Copy
+
+*   Parameters
+    *   P: Set the number of leveling grid points, which can be set within the range of integers \[1, 11\].
+    *   A: Enable automatic detection in automatic bed leveling and wait for it to complete.
+    *   S: Save the data of automatic bed leveling.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-11)
+ Examples
+
+*   You can refer to the following example for automatic bed leveling.
+    
+        G1029 P3     ; set grid points: 3x3
+        G1029 A      ; Enable automatic detection and wait for it to complete.
+        G91          ; Set relative position mode
+        G0 Z-0.2     ; Manually adjust the Z-axis position
+        G0 Z-0.1     ; Repeat until the nozzle is just close to the surface of the bed.
+        G1029 S      ; save
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m3m4-modified-cnclaser-on)
+ M3/M4 (Modified) - CNC/Laser On
+-------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-12)
+ Description
+
+*   For laser toolheads, both `M3` and `M4` are used to set the laser power.
+    *   `M3` is used to set a constant power. That is, in `M3` mode, the machine will not change the laser power during motion.
+    *   `M4` is used to set a variable power. That is, in `M4` mode, the machine will dynamically adjust the laser power based on the movement speed of the toolhead during motion, in pursuit of better and smoother laser engraving effects.
+*   For CNC toolhead, both `M3` and `M4` are used to set the CNC spindle speed, and the effects of `M3` and `M4` are consistent in the current version.
+*   In the current version, the CNC toolheads include the 50W CNC (also known as the standard CNC) and the 200W CNC.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-8)
+ Notes
+
+*   For laser toolhead, when the `M3`/`M4` command is used without parameters, the laser toolhead will output at the power configured most recently.
+*   For CNC toolhead, when the `M3`/`M4` command is used without parameters, the CNC toolhead will output at the power(or spindle speed) configured most recently.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-12)
+ Usage
+
+*   Laser toolhead
+    
+        M3 [P<%>] [S<pwm>]
+        M4 [P<%>] [S<pwm>]
+    
+    Copy
+    
+    *   Parameters
+        *   P: power, in the \[0, 100\]% range.
+        *   S: power, in the PWM \[0, 255\] range.
+        *   If both S and P are included, P takes precedence.
+*   CNC toolhead
+    
+        M3 [P<%>] [S<pwm>] [C]
+        M4 [P<%>] [S<pwm>] [C]
+    
+    Copy
+    
+    *   Parameters
+        *   50W CNC
+            *   P: power, in the \[0, 100\]% range.
+        *   200W CNC
+            *   P: spindle speed, in the \[0, 100\]% range.
+            *   S: spindle speed, in the \[8000, 18000\]rpm range, usually.
+            *   C: Only configure the target spindle speed without turning on the CNC.
+            *   If both S and P are included, P takes precedence.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-12)
+ Examples
+
+    M3
+    M3 P80
+    M4 S255
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m5-cnclaser-off)
+ M5 - CNC/Laser Off
+--------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-13)
+ Description
+
+*   Wait for moves to complete, then turn off the spindle/laser power and PWM.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-9)
+ Notes
+
+*   `G0` and `G28` will also turn the laser off.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-13)
+ Usage
+
+    M5
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-13)
+ Examples
+
+*   Turn off the spindle or laser.
+    
+        M5
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m7-m9-modified-coolantair-assist-controls)
+ M7 - M9 (Modified) - Coolant/Air Assist Controls
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-14)
+ Description
+
+*   These commands pertain to a CNC machine with a liquid cooling system or a laser with air assist.
+*   Both `M7` and `M8` have the same effect, which is used to turn on the coolant/air assist.
+*   `M9` is used to turn off the coolant/air assist.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-10)
+ Notes
+
+*   In the current version, it is only applicable to 20W/40W laser modules.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-14)
+ Usage
+
+    M7
+    M8
+    M9
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-14)
+ Examples
+
+    M8    ; turn on the coolant/air assist
+    M9    ; turn off the coolant/air assist
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m76-modified-pause-print-job)
+ M76 (Modified) - Pause Print Job
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-15)
+ Description
+
+*   Pause the print job.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-11)
+ Notes
+
+*   Supported versions
+    *   Main controller: V4.4.0 and later.
+    *   Screen: V1.13.3 and later.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-15)
+ Usage
+
+    M76
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-15)
+ Examples
+
+    M76
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m82-e-absolute)
+ M82 - E Absolute
+-----------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-16)
+ Description
+
+*   This command is used to override `G91` and put the E axis into absolute mode independent of the other axes.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-12)
+ Notes
+
+*   `G90` and `G91` clear this mode.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-16)
+ Usage
+
+    M82
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-16)
+ Examples
+
+*   Set E to Absolute Positioning.
+    
+        M82
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m83-e-relative)
+ M83 - E Relative
+-----------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-17)
+ Description
+
+*   This command is used to override G90 and put the E axis into relative mode independent of the other axes.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-13)
+ Notes
+
+*   `G90` and `G91` clear this mode.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-17)
+ Usage
+
+    M83
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-17)
+ Examples
+
+*   Set E to Relative Positioning.
+    
+        M83
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m92-set-axis-steps-per-unit)
+ M92 - Set Axis Steps-per-unit
+-------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-18)
+ Description
+
+*   Use `M92` to set the steps-per-unit for one or more axes. This setting affects how many steps will be done for each unit of movement.
+*   In the current version, the unit on the XYZE axis is set in steps-per-millimeter, and the unit on the AB axis is steps-per-degree.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-14)
+ Notes
+
+*   These are saved with `M500` and loaded with `M501` and reset with `M502`.
+*   Get the current settings using `M92` with no parameters or `M503`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-18)
+ Usage
+
+    M92 [E] [T] [X] [Y] [Z] [B]
+
+Copy
+
+*   Parameters
+    *   E: E steps per unit.
+    *   T: Target extruder.
+    *   X: X steps per unit.
+    *   Y: Y steps per unit.
+    *   Z: Z steps per unit.
+    *   B: B steps per unit.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-18)
+ Examples
+
+*   Set E steps for a new extruder.
+    
+        M92 E688.4
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m101-sm20-freertos-tasks-info)
+ M101 (SM2.0) - FreeRTOS Tasks Info
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-19)
+ Description
+
+*   Obtain FreeRTOS task information, such as remaining available memory information.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-19)
+ Usage
+
+    M101
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-19)
+ Examples
+
+    M101
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m104-set-hotend-temperature)
+ M104 - Set Hotend Temperature
+-------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-20)
+ Description
+
+*   Set a new target hot end temperature and continue without waiting. The firmware will continue to try to reach and hold the temperature in the background.
+*   Use `M109` to wait for the hot end to reach the target temperature.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-20)
+ Usage
+
+    M104 [T] [S]
+
+Copy
+
+*   Parameters
+    *   T: Hotend index. If omitted, the currently active hotend will be used.
+    *   S: Target temperature.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-20)
+ Examples
+
+*   Set target temperature for the active hotend.
+    
+        M104 S185
+    
+    Copy
+    
+*   Set target temperature for E1.
+    
+        M104 T1 S205
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m105-report-temperatures)
+ M105 - Report Temperatures
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-21)
+ Description
+
+*   Request a temperature report to be sent to the host as soon as possible.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-15)
+ Notes
+
+*   A better way for hosts to get regular temperature updates is to use `M155` . Hosts then no longer need to run an extra process or use up slots in the command buffer to receive temperatures.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-21)
+ Usage
+
+    M105 [T<index>]
+
+Copy
+
+*   Parameters
+    *   T: Hotend index.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-21)
+ Examples
+
+*   Get a temperature report.
+    
+        M105
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m106-set-fan-speed)
+ M106 - Set Fan Speed
+-------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-22)
+ Description
+
+*   Turn on one of the fans and set its speed. If no fan index is given, the print cooling fan is selected. The fan speed applies to the next block added to the planner, so it will not take effect until previous moves in the planner are done. Under manual control with an idle machine, `M106` will change the fan speed immediately.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-16)
+ Notes
+
+*   `M106` with no speed sets the fan to full speed.
+*   Turn off fans with `M107`.
+*   In the current version, it is only applicable to 3DP.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-22)
+ Usage
+
+    M106 [P<index>] [S<speed>]
+
+Copy
+
+*   Parameters
+    *   P: Fan index.
+    *   S: Speed, from 0 to 255. S255 provides 100% duty cycle; S128 produces 50%.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-22)
+ Examples
+
+*   Turn on the fan at 200/255 DC
+    
+        M106 S200
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m107-fan-off)
+ M107 - Fan Off
+-------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-23)
+ Description
+
+*   Turn off one of the fans. If no fan index is given, the print cooling fan.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-17)
+ Notes
+
+*   Turn on fans with `M106`.
+*   In the current version, it is only applicable to 3DP.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-23)
+ Usage
+
+    M107 [P<index>]
+
+Copy
+
+*   Parameters
+    *   P: Fan index.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-23)
+ Examples
+
+    M107
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m108-break-and-continue)
+ M108 - Break and Continue
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-24)
+ Description
+
+*   Some G-code commands cause Marlin to go into a closed loop, waiting indefinitely for a certain state or event. For example, M109 waits for the target temperature to be reached.
+*   In the case of `M109`, the `M108` command stops waiting for the target temperature and continues processing G-code. This may result in “cold extrude” messages.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-24)
+ Usage
+
+    M108
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-24)
+ Examples
+
+    M108
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m109-modified-wait-for-hotend-temperature)
+ M109 (Modified) - Wait for Hotend Temperature
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-25)
+ Description
+
+*   This command optionally sets a new target hot end temperature and waits for the target temperature to be reached before proceeding. If the temperature is set with S then `M109` waits only when heating. If the temperature is set with R then `M109` will also wait for the temperature to go down.
+*   To optimize temperature control performance and ensure the stability of the hot end temperature, two concepts, the temperature window and the temperature residency time, are used in the machine's firmware.
+    *   The temperature window refers to the maximum allowable deviation between the actual temperature of the hot end and the target temperature, measured in ℃, and is specified by the C parameter. For example, C3 represents a maximum allowable deviation of ±3℃. This means that when the actual temperature of the hot end is within ±3℃ of its target temperature, the machine considers the hot end to have reached the target temperature.
+    *   The temperature residency time refers to the duration that the actual temperature of the hot end needs to remain within the configured temperature window, measured in seconds, and is specified by the W parameter. For instance, W1 indicates that when the actual temperature of the hot end remains within its target temperature window for 1 second, the machine considers the actual temperature of the hot end to have reached and stabilized at its target temperature.
+    *   Only when the actual temperature of the hot end falls within the specified temperature window and maintains the specified temperature residency time, the machine considers the hot end to have truly reached the target temperature, thus ending the wait.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-18)
+ Notes
+
+*   To set the hot end temperature and proceed without waiting, use `M104`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-25)
+ Usage
+
+    M109 [T] [S] [R] [C] [W]
+
+Copy
+
+*   Parameters
+    *   T: Hotend index. If omitted, the currently active hotend will be used.
+    *   S: Target temperature (wait only when heating).
+    *   R: Target temperature (wait for cooling or heating).
+    *   C: the temperature window. If omitted, it is 1.
+    *   W: the temperature residency time. If omitted, it is 3.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-25)
+ Examples
+
+*   Set target temperature and wait (if heating up).
+    
+        M109 S180
+    
+    Copy
+    
+*   Set target temperature, wait even if cooling.
+    
+        M109 R120
+    
+    Copy
+    
+*   Set target temperature, temperature window, and temperature residency time for the hot end E1.
+    
+        M109 T1 S185 C1 W3
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m111-debug-level)
+ M111 - Debug Level
+---------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-26)
+ Description
+
+*   Marlin has several debug bits that can be set, in combination, to help configure, troubleshoot, and debug the firmware. Add up the debug bits you need:
+    
+    | Mask | Name | Description |
+    | --- | --- | --- |
+    | 1   | ECHO | Echo all commands sent to the parser. |
+    | 2   | INFO | Print extra informational messages. |
+    | 4   | ERRORS | Print extra error messages. |
+    | 8   | DRYRUN | Don’t extrude, don’t save leveling data, etc. |
+    | 16  | COMMUNICATION | Not currently used. |
+    | 32  | LEVELING | Detailed messages for homing, probing, and leveling. (Requires DEBUG\_LEVELING\_FEATURE.) |
+    | 64  | Reserved | Reserved for future usage. |
+    | 128 | Reserved | Reserved for future usage. |
+    
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-26)
+ Usage
+
+    M111 [S]
+
+Copy
+
+*   Parameters
+    *   S: Debug flag bits.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-26)
+ Examples
+
+    M111 S38
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m114-modified-get-current-position)
+ M114 (Modified) - Get Current Position
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-27)
+ Description
+
+*   Get the “current position” of the active tool. Stepper values are included.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-27)
+ Usage
+
+    M114
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-27)
+ Examples
+
+    M114
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m115-firmware-info)
+ M115 - Firmware Info
+-------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-28)
+ Description
+
+*   This command causes Marlin to output a string like this:
+    
+        FIRMWARE_NAME:Marlin SM2-4.7.2 (Github) SOURCE_CODE_URL:https://github.com/whimsycwd/SnapmakerMarlin PROTOCOL_VERSION:1.0 MACHINE_TYPE:GD32F305VGT6 EXTRUDER_COUNT:2 UUID:cede2a2f-41a2-4748-9b12-c55c62f367ff
+        Cap:SERIAL_XON_XOFF:0
+        Cap:BINARY_FILE_TRANSFER:0
+        Cap:EEPROM:1
+        Cap:VOLUMETRIC:0
+        Cap:AUTOREPORT_TEMP:1
+        Cap:PROGRESS:0
+        Cap:PRINT_JOB:1
+        Cap:AUTOLEVEL:0
+        Cap:Z_PROBE:1
+        Cap:LEVELING_DATA:1
+        Cap:BUILD_PERCENT:0
+        Cap:SOFTWARE_POWER:0
+        Cap:TOGGLE_LIGHTS:0
+        Cap:CASE_LIGHT_BRIGHTNESS:0
+        Cap:EMERGENCY_PARSER:0
+        Cap:PROMPT_SUPPORT:0
+        Cap:AUTOREPORT_SD_STATUS:0
+        Cap:THERMAL_PROTECTION:1
+        Cap:MOTION_MODES:0
+        Cap:CHAMBER_TEMPERATURE:0
+    
+    Copy
+    
+*   Hosts use this information to improve interoperability, so it’s a good feature to enable.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-28)
+ Usage
+
+    M115
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-28)
+ Examples
+
+    M115
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m118-serial-print)
+ M118 - Serial print
+-----------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-29)
+ Description
+
+*   Send a message to the connected host for display in the host console or to perform a host action.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-19)
+ Notes
+
+*   The `E` and `A` parameters must precede the message.
+*   Can also send the message to the serial port for hosts to display.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-29)
+ Usage
+
+    M118 [A1] [E1] [string]
+
+Copy
+
+*   Parameters
+    *   A1: Prepend `//` to denote a comment or action command. Hosts like OctoPrint can interpret such commands to perform special actions. See your host’s documentation.
+    *   E1: Prepend `echo:` to the message. Some hosts will display echo messages differently when preceded by `echo:`.
+    *   string: Message string. If omitted, a blank line will be sent.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-29)
+ Examples
+
+    M118 E1 Hello World!
+    M118 A1 action:cancel```
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m119-endstop-states)
+ M119 - Endstop States
+---------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-30)
+ Description
+
+*   Use this command to get the current state of all endstops, useful for setup and troubleshooting. Endstops are reported as either “`open`” or “`TRIGGERED`”.
+*   The state of the Z probe and filament runout sensors are also reported with this command.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-30)
+ Usage
+
+    M119
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-30)
+ Examples
+
+*   Get all endstop states.
+    
+        > M119
+        Reporting endstop status
+        x_min: open
+        y_min: open
+        z_min: TRIGGERED
+        z_probe: open
+        filament: open
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m140-set-bed-temperature)
+ M140 - Set Bed Temperature
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-31)
+ Description
+
+*   Set a new target temperature for the heated bed and continue without waiting. The firmware manages heating in the background.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-20)
+ Notes
+
+*   Use `M190` to set the bed temperature and pause until the target is reached.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-31)
+ Usage
+
+    M140 [S<temp>]
+
+Copy
+
+*   Parameters
+    *   S: Target temperature.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-31)
+ Examples
+
+*   Set target temperature, no waiting
+    
+        M140 S80
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m155-temperature-auto-report)
+ M155 - Temperature Auto-Report
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-32)
+ Description
+
+*   It can be useful for host software to track temperatures, display and graph them over time, but polling with `M105` is less than optimal. With `M155` hosts simply set an interval and Marlin will keep sending data automatically. This method is preferred over polling with `M105`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-32)
+ Usage
+
+    M155 S<seconds>
+
+Copy
+
+*   Parameters
+    *   S: Interval in seconds between auto-reports. S0 to disable.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-32)
+ Examples
+
+*   Report temperatures every 4 seconds
+    
+        M155 S4
+    
+    Copy
+    
+*   Stop reporting temperatures
+    
+        M155 S0
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m190-wait-for-bed-temperature)
+ M190 - Wait for Bed Temperature
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-33)
+ Description
+
+*   This command optionally sets a new target temperature for the heated bed and waits for the target temperature to be reached before proceeding. If the temperature is set with S, then it waits only when heating.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-21)
+ Notes
+
+*   This command may block the command queue. And hosts can break in using `M108`.
+*   Use `M140` to set the bed temperature and proceed without waiting.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-33)
+ Usage
+
+    M190 [R<temp>] [S<temp>]
+
+Copy
+
+*   Parameters
+    *   S: Target temperature (wait only when heating).
+    *   R: Target temperature (wait for cooling or heating).
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-33)
+ Examples
+
+*   Set target bed temperature and wait (if heating).
+    
+        M190 S80
+    
+    Copy
+    
+*   Set target bed temperature and wait even if cooling.
+    
+        M190 R40
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m201-printravel-move-limits)
+ M201 - Prin/Travel Move Limits
+--------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-34)
+ Description
+
+*   Set the max acceleration for one or more axes (in current units-per-second per-second). The acceleration limit for extruder(s) only applies for print moves where at least one other axis is also in motion.
+*   To set the acceleration limit for retract / recover in which only the E axis is moving use `M204 R` instead.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-22)
+ Notes
+
+*   These are saved with `M500` and loaded with `M501` and reset with `M502`.
+*   Get the current settings using `M503`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-34)
+ Usage
+
+    M201 [E<accel>] [T<index>] [X<accel>] [Y<accel>] [Z<accel>] [B<accel>]
+
+Copy
+
+*   Parameters
+    *   E: E axis max acceleration.
+    *   T: Target extruder.
+    *   X: X axis max acceleration.
+    *   Y: Y axis max acceleration.
+    *   Z: Z axis max acceleration.
+    *   B: B axis max acceleration.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-34)
+ Examples
+
+*   Set max acceleration lower so it sounds like a robot:
+    
+        M201 X50 Y50
+    
+    Copy
+    
+*   Set the max acceleration for E1 print moves:
+    
+        M201 E1000 T1
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m203-set-max-feedrate)
+ M203 - Set Max Feedrate
+-------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-35)
+ Description
+
+*   Set the max feedrate for one or more axes (in current units-per-second).
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-23)
+ Notes
+
+*   The Z-axis maximum speed can be set up to 40mm/s.
+*   These are saved with `M500` and loaded with `M501` and reset with `M502`.
+*   Get the current settings using `M503`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-35)
+ Usage
+
+    M203 [E<units/s>] [T<index>] [X<units/s>] [Y<units/s>] [Z<units/s>] [B<units/s>]
+
+Copy
+
+*   Parameters
+    *   E: E axis max feedrate.
+    *   T: Target extruder.
+    *   X: X axis max feedrate
+    *   Y: Y axis max feedrate.
+    *   Z: Z axis max feedrate.
+    *   B: B axis max feedrate.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-35)
+ Examples
+
+*   Set max feedrate for XY to 100mm/s:
+    
+        M203 X100 Y100
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m204-set-starting-acceleration)
+ M204 - Set Starting Acceleration
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-36)
+ Description
+
+*   Set the preferred starting acceleration (in units/s/s) for moves of different types.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-24)
+ Notes
+
+*   These are saved with `M500` and loaded with `M501` and reset with `M502`.
+*   Get the current settings using `M503`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-36)
+ Usage
+
+    M204 [P<accel>] [R<accel>] [T<accel>]
+
+Copy
+
+*   Parameters
+    *   P: Printing acceleration. Used for moves that include extrusion (i.e., which employ the current tool).
+    *   R: Retract acceleration. Used for extruder retract / recover moves.
+    *   T: Travel acceleration. Used for moves that include no extrusion.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-36)
+ Examples
+
+*   Set acceleration for printing moves to 2400mm/s/s.
+    
+        M204 P2400
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m205-modified-set-advanced-settings)
+ M205 (Modified) - Set Advanced Settings
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-37)
+ Description
+
+*   Set various motion settings. See parameters for details.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-25)
+ Notes
+
+*   The P/L/C parameter requires the version of the main controller to be V4.4.0 or later, and it is generally not recommended to modify it.
+*   These are saved with `M500` and loaded with `M501` and reset with `M502`.
+*   Get the current settings using `M503`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-37)
+ Usage
+
+    M205 [B<µs>] [S<units/s>] [T<units/s>] [J<deviation>] [P<units/s>] [L<units/s>] [C<units/s>]
+
+Copy
+
+*   Parameters
+    *   B: Minimum segment time (µs).
+    *   S: Minimum feedrate for print moves (units/s).
+    *   T: Minimum feedrate for travel moves (units/s).
+    *   J: Junction deviation in Marlin.
+    *   P: Minimum planning feedrate for 3DP toolhead (units/s).
+    *   L: Minimum planning feedrate for Laser toolhead (units/s).
+    *   C: Minimum planning feedrate for CNC toolhead (units/s).
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-37)
+ Examples
+
+    M205 T40 ; Travel feedrate = 40mm/s
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m211-software-endstops)
+ M211 - Software Endstops
+---------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-38)
+ Description
+
+*   Optionally enable/disable software endstops, then report the current state.With software endstops enabled, moves will be clipped to the physical boundaries from `[XYZ]_MIN_POS` to `[XYZ]_MAX_POS`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-38)
+ Usage
+
+    M211 [S<flag>]
+
+Copy
+
+*   Parameters
+    *   S: Software endstops state (S1=enable S0=disable).
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-38)
+ Examples
+
+    M211
+    M211 S1
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m220-set-feedrate-percentage)
+ M220 - Set Feedrate Percentage
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-39)
+ Description
+
+*   Set speed percentage factor, aka “Feed Rate” which applies to all G-code-based moves in all (X, Y, Z, and E) axes. Report the current speed percentage factor if no parameter is specified.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-39)
+ Usage
+
+    M220 [S<percent>]
+
+Copy
+
+*   Parameters
+    *   S: Feedrate percentage.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-39)
+ Examples
+
+*   Set feedrate to 80%.
+    
+        M220 S80
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m221-set-flow-percentage)
+ M221 - Set Flow Percentage
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-40)
+ Description
+
+*   Set the flow percentage, which applies to all E moves added to the planner.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-40)
+ Usage
+
+    M221 [S<percent>] [T<index>]
+
+Copy
+
+*   Parameters
+    *   S: Flow percentage.
+    *   T: Target extruder.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-40)
+ Examples
+
+*   Set the flow rate to 150%.
+
+    M221 S150
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m301-set-hotend-pid)
+ M301 - Set Hotend PID
+---------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-41)
+ Description
+
+*   Set the values that control the PID loop for a hotend.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-26)
+ Notes
+
+*   These are saved with `M500`, loaded with `M501`, and reset with `M502`.
+*   Get the current settings using `M301` with no parameters or `M503`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-41)
+ Usage
+
+    M301 [E<index>] [D<value>] [I<value>] [P<value>]
+
+Copy
+
+*   Parameters
+    *   E: Extruder index to set. Default 0.
+    *   D: Derivative value.
+    *   I: Integral value.
+    *   P: Proportional value.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-41)
+ Examples
+
+    M301
+    M301 E0 P150.000 I1.000 D30000.000
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m302-cold-extrude)
+ M302 - Cold Extrude
+-----------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-42)
+ Description
+
+*   Set the minimum extrusion temperature, potentially allowing E movement at temperatures below the melting point of the material.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-42)
+ Usage
+
+    M302 [P<flag>] [S<temp>]
+
+Copy
+
+*   Parameters
+    *   P: Flag to allow extrusion at any temperature.
+    *   S: Minimum temperature for safe extrusion.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-42)
+ Examples
+
+    M302         ; report current cold extrusion state
+    M302 P0      ; enable cold extrusion checking
+    M302 P1      ; disable cold extrusion checking
+    M302 S0      ; always allow extrusion (disable checking)
+    M302 S170    ; only allow extrusion above 170
+    M302 S170 P1 ; set min extrude temp to 170 but leave disabled
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m400-finish-moves)
+ M400 - Finish Moves
+-----------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-43)
+ Description
+
+*   This command causes G-code processing to pause and wait in a loop until all moves in the planner are completed.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-43)
+ Usage
+
+    M400
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-43)
+ Examples
+
+    M400
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m412-filament-runout)
+ M412 - Filament Runout
+-----------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-44)
+ Description
+
+*   Get or set filament runout status and distance. Omit all parameters to get a report of the current stats. When filament sensors are enabled, Marlin will respond to a filament runout by running the configured G-code. When filament runout detection is disabled, Marlin will take no action for filament runout.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-44)
+ Usage
+
+    M412 [R<bool>] [S<bool>]
+
+Copy
+
+*   Parameters
+    *   R: Flag to reset the filament runout sensor. Not needed with S.
+    *   S: Flag to enable or disable Filament Runout Detection. If omitted, the current enabled state will be reported.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-44)
+ Examples
+
+*   Enable (and reset) filament runout detection.
+    
+        M412 S1
+    
+    Copy
+    
+*   Disable filament runout detection.
+    
+        M412 S0
+    
+    Copy
+    
+*   Report filament runout state.
+    
+        M412
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m420-modified-bed-leveling-state)
+ M420 (Modified) - Bed Leveling State
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-45)
+ Description
+
+*   Get and/or set bed leveling state.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-27)
+ Notes
+
+*   In the current version, `M420` only supports the `S` and `V` parameters. And other parameters available for `M420` in official Marlin documentation are not compatible here and should not be used.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-45)
+ Usage
+
+    M420 [S<bool>] [V<bool>]
+
+Copy
+
+*   Parameters
+    *   S: Set enabled or disabled.
+    *   V: Verbose, Print the stored mesh / matrix data.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-45)
+ Examples
+
+    M420 S1
+    M420 V
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m425-modified-backlash-compensation)
+ M425 (Modified) - Backlash compensation
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-46)
+ Description
+
+*   Backlash compensation will add extra steps to one or more segments whenever a motor reverses direction. By default, steps are added to the first segment after a direction change. This gives the best dimensional accuracy but may cause marks to appear in the print. Smoothing spreads the added steps over multiple consecutive segments to prevent blemishes in the print, at the expense of dimensional accuracy. In SM2.0, the default method is used, which means that steps are added to the first segment after a direction change.
+*   Backlash compensation can be configured at either compile-time or run-time.
+*   `MEASURE_BACKLASH_WHEN_PROBING` is not enabled in SM2.0, so the backlash cannot be automatically measured.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-28)
+ Notes
+
+*   The default backlash on each axis, i.e., BACKLASH\_DISTANCE\_MM, is 0.
+*   The default backlash correction, i.e., BACKLASH\_CORRECTION, is 0.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-46)
+ Usage
+
+    M425 [F<value>] [X<linear>] [Y<linear>] [Z<linear>] [B<linear>]
+
+Copy
+
+*   Parameters
+    *   F: Enable or disables backlash correction, or sets an intermediate fade-out (0.0 = none; 1.0 = 100%)
+    *   X: Set the backlash distance on X (mm; 0 to disable)
+    *   Y: Set the backlash distance on Y (mm; 0 to disable)
+    *   Z: Set the backlash distance on Z (mm; 0 to disable)
+    *   B: Set the backlash distance on B (mm; 0 to disable)
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-46)
+ Examples
+
+*   Manually configure backlash compensation:
+    
+        M425 X0.1 Y0.2 Z0.3 ; Set backlash to specific values for all axis
+        M425 F1             ; Enable backlash compensation at 100%
+    
+    Copy
+    
+*   Report the current backlash configuration:
+    
+        M425
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m500-save-settings)
+ M500 - Save Settings
+-------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-47)
+ Description
+
+*   Save all configurable settings to EEPROM.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-47)
+ Usage
+
+    M500
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-47)
+ Examples
+
+    M500
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m501-restore-settings)
+ M501 - Restore Settings
+-------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-48)
+ Description
+
+*   Load all saved settings from EEPROM.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-48)
+ Usage
+
+    M501
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-48)
+ Examples
+
+    M501
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m502-factory-reset)
+ M502 - Factory Reset
+-------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-49)
+ Description
+
+*   Reset all configurable settings to their factory defaults. This only changes the settings in memory, not on EEPROM.
+*   To also reset settings in EEPROM, follow with `M500`.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-49)
+ Usage
+
+    M502
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-49)
+ Examples
+
+*   Reset settings and save them to EEPROM
+    
+        M502 ; reset
+        M500 ; saved
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m503-report-settings)
+ M503 - Report Settings
+-----------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-50)
+ Description
+
+*   Print a concise report of all runtime-configurable settings (in SRAM) to the host console. This command reports the active settings which may or may not be the same as those stored in the EEPROM.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-50)
+ Usage
+
+    M503 [S]
+
+Copy
+
+*   Parameters
+    *   S: Detailed output flag. (true if omitted.)
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-50)
+ Examples
+
+    M503
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m504-validate-eeprom-contents)
+ M504 - Validate EEPROM contents
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-51)
+ Description
+
+*   Validate the contents of the EEPROM.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-51)
+ Usage
+
+    M504
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-51)
+ Examples
+
+*   Validate EEPROM contents.
+    
+        M504
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m600-modified-trigger-filament-runout-event)
+ M600 (Modified) - Trigger Filament Runout Event
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-52)
+ Description
+
+*   Trigger a filament runout event to pause the print job, allowing for actions such as filament change.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-29)
+ Notes
+
+*   Using the M600 command is only effective during the extrusion process of the extruder.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-52)
+ Usage
+
+    M600
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-52)
+ Examples
+
+    M600
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m900-modified-linear-advance-factor)
+ M900 (Modified) - Linear Advance Factor
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-53)
+ Description
+
+*   This command sets and/or reports the Linear Advance K factors.
+*   Setting the K factor to 0 disables Linear Advance.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-30)
+ Notes
+
+*   See [Linear Advance](https://marlinfw.org/docs/features/lin_advance.html)
+     for details on how to determine the K factor and a link to our calibration tool.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-53)
+ Usage
+
+    M900 [K<kfactor>] [T<index>]
+
+Copy
+
+*   Parameters
+    *   K: The K factor to set for the specified extruder. Unchanged if omitted. Set this value higher for more flexible filament or a longer filament path.
+    *   T: Target extruder.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-53)
+ Examples
+
+*   Fetch the K factor.
+    
+        M900
+    
+    Copy
+    
+*   Set the K factor
+    
+        M900 T0 K0.035
+        M900 T1 K0.035
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m1005-sm20-get-basic-info-of-controller-and-modules)
+ M1005 (SM2.0) - Get Basic Info of Controller and Modules
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-54)
+ Description
+
+*   Get the basic information of the controller and modules, see the following example for details.
+    
+        Marlin SM2-4.7.2
+        Compiled: Jun  3 2024, 17:42:45
+        PACKAGE: Snapmaker_V4.7.2
+        Module Ver:
+        Module 0x00C048D4: v1.14.6
+        Module 0x00C02468: v1.14.6
+        Module 0x0002C4DE: v1.14.3
+        Module 0x00C048D8: v1.14.6
+        Module 0x00C048E0: v1.14.6
+        Module 0x00C048F0: v1.14.6
+        linear_tmc X1 length: 356 mm, lead: 20 mm
+        linear_tmc Y1 length: 356 mm, lead: 20 mm
+        linear_tmc Z1 length: 356 mm, lead: 8 mm
+        linear_tmc Y2 length: 356 mm, lead: 20 mm
+        linear_tmc Z2 length: 356 mm, lead: 8 mm
+        kits: quick_change_kit
+        Machine Size: L
+        ok
+    
+    Copy
+    
+    *   `Marlin SM2-4.7.2`: Controller firmware version.
+    *   `Compiled: Jun 3 2024, 17:42:45`: Controller firmware compilation time.
+    *   `Module 0x00C048D4: v1.14.6`: Module ID | sequence, module firmware version.
+    *   `linear_tmc X1 length: 356 mm, lead: 20 mm`: Information related to linear module.
+        *   `X1`: Axis.
+        *   `length`: Travel distance.
+        *   `lead`: lead.
+    *   `kits: quick_change_kit`: Kits usage.
+        *   `quick_change_kit`: Quick swap kit, namely, quick change kit.
+        *   `reinforcement_kit`: Bracing kit, namely, linear reinforcement kit.
+        *   `Machine Size: L`: Machine Size.
+            *   `S`: A150。
+            *   `M`: A250。
+            *   `L`: A350。
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-54)
+ Usage
+
+    M1005
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-54)
+ Examples
+
+    M1005
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m1006-sm20-get-toolhead-details)
+ M1006 (SM2.0) - Get Toolhead Details
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-55)
+ Description
+
+*   Get detailed information of the toolhead. For different toolheads, the information format may vary. Only key fields are explained here, and see the following example for details.
+    *   3DP
+        
+            Tool Head: 3DP
+            active_probe_sensor: 0
+            hotend_type: 0: 1, 1: 1
+            hotend_diameter: 0: 0.40, 1:0.40
+            Kp: 150.000, Ki: 1.000, Kd: 30000.000
+            z_compensation: 0: 0.585, 1: 0.397
+            echo:Hotend offsets: 0.00,0.00,0.000 26.00,0.00,-1.524
+            ok
+        
+        Copy
+        
+        *   `Tool Head: 3DP`: Toolhead type - 3DP.
+        *   `z_compensation: 0: 0.585, 1: 0.397`: Z probe compensation.
+    *   Laser
+        
+            Tool Head: 20W LASER
+            Current Status: OFF
+            Current Power: 0.00
+            Focus Height: 65
+            ok
+        
+        Copy
+        
+        *   `Tool Head: 20W LASER`: Toolhead type - 20W Laser.
+        *   `Current Status: OFF`: Current status of the laser.
+        *   `Current Power: 0.00`: Current power of the laser.
+    *   CNC
+        
+            Tool Head: 200W CNC
+            rpm: 0, error: 0x0
+            M_I: 346, M_V: 24.23
+            M_TEMP: 25.80, PCB_TEMP: 26.90
+            ctr mode: CNC_CONSTANT_RPM_MODE
+            run status: STOP
+            cur_power: 0 target_power: 0
+            cur_rpm: 0 target_rpm: 0
+            last error: 0x0
+            ok
+        
+        Copy
+        
+        *   `Tool Head: 200W CNC`: Toolhead type - 200W CNC.
+        *   `cur_rpm: 0 target_rpm: 0`: Current rpm and target rpm.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-55)
+ Usage
+
+    M1006
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-55)
+ Examples
+
+    M1006
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m1010-s3-sm20-set-enclosure-light)
+ M1010 S3 (SM2.0) - Set Enclosure Light
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-56)
+ Description
+
+*   Set the brightness and on/off status of the enclosure's light.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-56)
+ Usage
+
+    M1010 S3 P<n>
+
+Copy
+
+*   Parameters
+    *   P: brightness, from 0 to 100. 0 represents turning off the light, 100 represents turning on the light at maximum brightness.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-56)
+ Examples
+
+*   Turn off the light.
+    
+        M1010 S3 P0
+    
+    Copy
+    
+*   Turn on the light at 50% brightness.
+    
+        M1010 S3 P50
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m1010-s4-sm20-set-enclosure-fan)
+ M1010 S4 (SM2.0) - Set Enclosure Fan
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-57)
+ Description
+
+*   Set the speed and switch status of the enclosure's fan.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-57)
+ Usage
+
+    M1010 S4 P<n>
+
+Copy
+
+*   Parameters
+    *   P: Speed, from 0 to 100. 0 represents turning off the fan, 100 represents running the fan at full speed.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-57)
+ Examples
+
+    M1010 S4 P50
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m1011-f-sm20-set-purifier-fan)
+ M1011 F (SM2.0) - Set Purifier Fan
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-58)
+ Description
+
+*   Set the speed gear of the purifier's fan.
+*   If there is an abnormality in the purifier, it can also be forced to turn on the fan through a force flag.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-58)
+ Usage
+
+    M1011 F<n> [S<force>]
+
+Copy
+
+*   Parameters
+    *   F: gear, ranging in {0, 1, 2, 3}, 0 represents turning off the fan, 3 represents turning on the fan at maximum speed gear.
+    *   S: Force flag, 0 represents non-force, non-zero represents force.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-58)
+ Examples
+
+*   Turn off the fan.
+    
+        M1011 F0
+    
+    Copy
+    
+*   Turn on the fan at gear 1.
+    
+        M1011 F1
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m1011-rgb-sm20-set-purifier-light)
+ M1011 R|G|B (SM2.0) - Set Purifier Light
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-59)
+ Description
+
+*   Set the color and brightness of the purifier's light, referencing the RGB color mixing principle.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-59)
+ Usage
+
+    M1011 [R<n>] [G<n>] [B<n>]
+
+Copy
+
+*   Parameters
+    *   R: Red component, from 0 to 255.
+    *   G: Green component, from 0 to 255.
+    *   B: Blue component, from 0 to 255.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-59)
+ Examples
+
+*   Turn off the light.
+    
+        M1011 R0 G0 B0
+    
+    Copy
+    
+*   Set the brightness and color of the light with R-50, G-100, B-50.
+    
+        M1011 R50 G100 B50
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m2000-l23-sm20-set-laser-branch-power-supplyhalf-power-mode)
+ M2000 L23 (SM2.0) - Set Laser Branch Power Supply|Half Power Mode
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-60)
+ Description
+
+*   Set the switch status of the branch power supply for the toolhead, that is, set the half power mode.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-31)
+ Notes
+
+*   In the current version, this is only applicable to 40W laser module.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-60)
+ Usage
+
+    M2000 L23 P<n>
+
+Copy
+
+*   Parameters
+    *   P: 0 represents turning off the branch power supply, which means entering the half-power mode, while non-zero represents turning on the branch power supply, which means exiting the half-power mode.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-60)
+ Examples
+
+    M2000 L23 P1
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m2000-l30-sm20-set-laser-module-standby-mode)
+ M2000 L30 (SM2.0) - Set Laser Module Standby Mode
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-61)
+ Description
+
+*   The laser module enters/exits standby mode.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-32)
+ Notes
+
+*   In the current version, this is only applicable to 2W infrared laser module.
+*   In the current version, for the 2W infrared laser module, the so-called standby mode refers to putting some functions of the module into a standby state for hardware protection (rather than energy saving), such as the TEC temperature control function.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-61)
+ Usage
+
+    M2000 L30 P<n>
+
+Copy
+
+*   Parameters
+    *   P: Standby mode, 0 represents exiting standby mode, non-zero represents entering standby mode.
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-61)
+ Examples
+------------------------------------------------------------------------------------------------------------
+
+*   exits standby mode.
+
+    M2000 L30 P0
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m2002-t2-sm20-set-laser-fan)
+ M2002 T2 (SM2.0) - Set Laser Fan
+----------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-62)
+ Description
+
+*   Set the speed and switch status of the fan for the laser toolhead.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-62)
+ Usage
+
+    M2002 T2 P<n>
+
+Copy
+
+*   Paramters
+    *   P: Speed, from 0 to 255. 0 represents turning off the fan, 255 represents running the fan at full speed.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-62)
+ Examples
+
+*   Run the fan at full speed.
+    
+        M2002 T2 P255
+    
+    Copy
+    
+*   Turn off the fan.
+    
+        M2002 T2 P0
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#m2002-t3-sm20-set-laser-crosshair)
+ M2002 T3 (SM2.0) - Set Laser Crosshair
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-63)
+ Description
+
+*   Set the switch status of the crosshair for the laser toolhead.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-33)
+ Notes
+
+*   In the current version, this is only applicable to 20W/40W blue laser modules and 2W infrared laser modules.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-63)
+ Usage
+
+    M2002 T3 P<n>
+
+Copy
+
+*   Parameters
+    *   P: Switch status, 0 represents turning off, non-zero represents turning on.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-63)
+ Examples
+
+*   Turn on the crosshair.
+    
+        M2002 T3 P1
+    
+    Copy
+    
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#t0-t1-modified-select-the-nozzle)
+ T0-T1 (Modified) - Select The Nozzle
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#description-64)
+ Description
+
+*   Switch or select the nozzle.
+*   `T0` represents selecting the left nozzle, and `T1` represents selecting the right nozzle.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#notes-34)
+ Notes
+
+*   The machine can only switch nozzles normally after homed.
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#usage-64)
+ Usage
+
+    T0
+    T1
+
+Copy
+
+### [¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#examples-64)
+ Examples
+
+    T0
+    T1
+
+Copy
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#supported-but-unverified-commands)
+ Supported But Unverified Commands
+===========================================================================================================================================================
+
+> (1) The commands described in this section, although supported by the code and expected to behave consistently with official Marlin, are not recommended for use due to lack of rigorous validation. If you really need to use them, please refer to the [Marlin official documentation](https://marlinfw.org/meta/gcode)
+>  for relevant command details.  
+> (2) Snapmaker Luban will not actively use the commands described in this chapter.
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#commands)
+ Commands
+---------------------------------------------------------------------------------------------------------
+
+*   G2-G3
+*   G27
+*   G30
+*   M17
+*   M18
+*   M84
+*   M110
+*   M113
+*   M421
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#incompatible-or-unadapted-commands)
+ Incompatible Or Unadapted Commands
+=============================================================================================================================================================
+
+> (1) The commands described in this section have not been adapted for SM2.0 or may be incompatible with other functions. If used, they may cause unexpected issues/exceptions, and it is strongly recommended not to use them. If you use them, you should be responsible for any actual effects or consequences.  
+> (2) In the later versions, code support for these commands may be gradually removed.
+
+[¶](https://wiki.snapmaker.com/en/Snapmaker_Luban/manual/2_supported_gcode_references#commands-1)
+ Commands
+-----------------------------------------------------------------------------------------------------------
+
+*   G29
+*   G38
+*   M25
+*   M31
+*   M42
+*   M75
+*   M77
+*   M81
+*   M85
+*   M112
+*   M117
+*   M120
+*   M121
+*   M206
+*   M217
+*   M218
+*   M226
+*   M303
+*   M401
+*   M402
+*   M410
+*   M413
+*   M428
+*   M851
+*   M999
+
+Comments
+
+![](https://cdn.snapmaker.com/ai/customer-service.png)

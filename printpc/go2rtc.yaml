@@ -1,0 +1,31 @@
+# Deployed to C:\OctoPrint\go2rtc.yaml on printpc.cns.me.
+#
+# Two USB cameras. One stream per physical device.
+# Never define more than one stream per device: a UVC device is exclusive and a
+# second consumer fails with "Could not run graph ... device already in use".
+#
+#   16MP USB Camera (VID_32E4)  down at the bed
+#   HD Camera       (VID_1E45)  up at the nozzle, OV9726, native MJPEG 1280x800
+#
+# The nozzle camera needs the exec: pipe source, not ffmpeg:device and not an
+# RTSP exec source. Three separate faults rule the other routes out.
+#
+#  1. go2rtc's ffmpeg:device source cannot emit -vcodec on Windows, so it cannot
+#     select the dshow MJPEG pin. dshow then picks the raw pin.
+#  2. The HD Camera emits MJPEG with a restart interval (DRI 80) at 4:2:2.
+#     ffmpeg's RTP/JPEG payloader cannot carry restart markers, and it aborts on
+#     4:2:2 with "Only 1x1 chroma blocks are supported". Re-encoding to 4:2:0
+#     with -huffman default gets past both, but go2rtc then rebuilds the chroma
+#     quantisation tables wrongly and the picture comes back oversaturated.
+#  3. In pipe mode go2rtc reads whole JPEG frames from stdout and never
+#     packetises them, so the native camera frames arrive untouched.
+#
+# The command lives in nozzlecam.bat because go2rtc splits an exec: command on
+# spaces and ignores quotes, and it truncates the command at the first '#'.
+# The device name contains a space and its PnP path contains three '#'.
+ffmpeg:
+  bin: "C:/OctoPrint/ffmpeg.exe"
+
+streams:
+  bed_cam: "ffmpeg:device?video=16MP USB Camera&video_size=1280x720"
+  nozzle_cam: "exec:cmd /c C:/OctoPrint/nozzlecam.bat"
