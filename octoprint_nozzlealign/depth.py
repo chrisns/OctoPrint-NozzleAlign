@@ -180,3 +180,25 @@ def fit_lens_plane(samples):
     lens_z = float(-intercept / slope)
     focal = float(1.0 / slope)
     return lens_z, focal
+
+
+def tip_height(nearest_mm, lens_z):
+    """Height above the bed of the nearest thing the camera can see."""
+    return float(nearest_mm) + float(lens_z)
+
+
+def is_the_tip(nearest_mm, commanded_z, lens_z, tolerance_mm=4.0):
+    """Whether the nearest thing seen really is the nozzle tip.
+
+    Z is defined as the height of the nozzle tip above the bed, so when the tip
+    is the nearest thing the camera can see, its measured height must come back
+    as Z. Anything else on the toolhead sits higher, and reads further away.
+
+    This is the check the whole method turns on. Without it the routine happily
+    tracks a bracket or a fan shroud, calls it a nozzle, and returns a confident
+    wrong answer. With it, a reading is either the tip or it is rejected.
+
+    Measured on the machine at Z150: over the camera the nearest reading was
+    150.8 mm, and one 10 mm step away it jumped to 167.6 mm.
+    """
+    return abs(tip_height(nearest_mm, lens_z) - float(commanded_z)) <= float(tolerance_mm)

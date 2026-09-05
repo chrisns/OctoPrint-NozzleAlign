@@ -147,3 +147,37 @@ def test_a_single_group_is_unaffected():
     centre, _, _ = depth.nearest_region(rows, distance)
     assert centre[0] == pytest.approx(613.0, abs=15)
     assert centre[1] == pytest.approx(513.0, abs=15)
+
+
+# -- telling the tip from the rest of the toolhead --------------------------
+
+
+def test_the_tip_reads_back_at_the_commanded_height():
+    """Z is the height of the tip, so the tip must measure as Z and nothing else.
+
+    These are the two readings the machine gave at Z150, ten millimetres apart:
+    over the camera the nearest thing was 150.8 mm away, and one step later it
+    was 167.6 mm, which is the body.
+    """
+    lens_z = -4.8
+    assert depth.is_the_tip(150.8 - lens_z, 150.0, lens_z)
+    assert not depth.is_the_tip(167.6 - lens_z, 150.0, lens_z)
+
+
+def test_the_tolerance_is_respected():
+    lens_z = 0.0
+    assert depth.is_the_tip(153.0, 150.0, lens_z, tolerance_mm=4.0)
+    assert not depth.is_the_tip(153.0, 150.0, lens_z, tolerance_mm=2.0)
+
+
+def test_tip_height_accounts_for_where_the_lens_sits():
+    # a lens below the bed makes everything measure further away than its height
+    assert depth.tip_height(155.0, -5.0) == pytest.approx(150.0)
+    assert depth.tip_height(130.0, 20.0) == pytest.approx(150.0)
+
+
+def test_the_check_works_at_any_height():
+    lens_z = -4.8
+    for z in (150.0, 110.0, 80.0, 60.0):
+        assert depth.is_the_tip(z - lens_z, z, lens_z)
+        assert not depth.is_the_tip(z - lens_z + 17.0, z, lens_z)
