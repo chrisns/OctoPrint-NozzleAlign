@@ -40,7 +40,7 @@ class NozzleAlignPlugin(
             # camera
             snapshot_url="http://127.0.0.1:1984/api/frame.jpeg?src=nozzle_cam",
             stream_url="http://127.0.0.1:1984/api/stream.mjpeg?src=nozzle_cam",
-            http_timeout=10.0,
+            http_timeout=20.0,
             frame_average=8,
             # where the camera sits on the bed; the routine refuses to run
             # until these are set, because it drives the nozzle down onto it
@@ -84,6 +84,9 @@ class NozzleAlignPlugin(
         return 1
 
     # -- TemplatePlugin ---------------------------------------------------
+
+    def is_template_autoescaped(self):
+        return True
 
     def get_template_configs(self):
         return [
@@ -154,6 +157,9 @@ class NozzleAlignPlugin(
             )
 
     # -- SimpleApiPlugin --------------------------------------------------
+
+    def is_api_protected(self):
+        return True
 
     def get_api_commands(self):
         return dict(
@@ -346,20 +352,6 @@ class NozzleAlignPlugin(
     def is_blueprint_csrf_protected(self):
         return True
 
-    # -- software update --------------------------------------------------
-
-    def get_update_information(self):
-        return dict(
-            nozzlealign=dict(
-                displayName=__plugin_name__,
-                displayVersion=self._plugin_version,
-                type="github_release",
-                user="cnsmith",
-                repo="3d-print-calibrate",
-                current=self._plugin_version,
-            )
-        )
-
 
 class _ResultKeepingRoutine(routine.CalibrationRoutine):
     """Stores the result on the plugin so the UI can fetch it after a reload."""
@@ -406,6 +398,4 @@ def __plugin_load__():
     __plugin_hooks__ = {
         "octoprint.comm.protocol.gcode.received":
             __plugin_implementation__.gcode_received,
-        "octoprint.plugin.softwareupdate.check_config":
-            __plugin_implementation__.get_update_information,
     }

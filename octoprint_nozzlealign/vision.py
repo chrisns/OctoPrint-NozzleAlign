@@ -9,6 +9,7 @@ from __future__ import absolute_import
 
 import io
 import math
+import time
 
 import numpy as np
 import requests
@@ -33,14 +34,27 @@ class DetectionError(Exception):
 # --------------------------------------------------------------------------
 
 
-def fetch_frame(url, timeout=10.0):
-    """Fetch one JPEG frame and return it as a float32 greyscale array."""
-    response = requests.get(url, timeout=timeout)
-    response.raise_for_status()
-    if len(response.content) < 1000:
-        raise CaptureError("frame was %d bytes" % len(response.content))
-    image = Image.open(io.BytesIO(response.content)).convert("L")
-    return np.asarray(image, dtype=np.float32)
+def fetch_frame(url, timeout=10.0, attempts=4, retry_delay=1.0):
+    """Fetch one JPEG frame and return it as a float32 greyscale array.
+
+    go2rtc stops the camera process while nothing is watching, and the first
+    request after that answers 200 with an empty body while ffmpeg starts.  The
+    retry covers that cold start.
+    """
+    last = 0
+    for attempt in range(attempts):
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+        last = len(response.content)
+        if last >= 1000:
+            image = Image.open(io.BytesIO(response.content)).convert("L")
+            return np.asarray(image, dtype=np.float32)
+        if attempt < attempts - 1:
+            time.sleep(retry_delay)
+    raise CaptureError(
+        "the camera returned %d bytes after %d attempts; check the go2rtc "
+        "stream at %s" % (last, attempts, url)
+    )
 
 
 def frame_health(frame):
