@@ -165,20 +165,26 @@ The descent is guarded three ways.
 The loop repeats until the residual falls below the tolerance, which defaults to
 0.005 mm.
 
-## The offset sign
+## The offset sign, settled on the machine
 
-Marlin stores the tool offset in `hotend_offset[axis][tool]`. Snapmaker does not
-document the sign for its dual extrusion toolhead, and the firmware already
-compensates for the stored value while you measure. The plugin therefore reports
-both candidates and asks you to write one.
+The firmware does apply the stored offset over the serial link. Measured on
+2026-09-05, at Z150 with the camera watching the toolhead:
 
-Write a candidate, run the measurement again, and read the correction.
+- Command T0 to X, then T1 to `X + stored_offset`, and the two toolhead bodies
+  land in the same place to **0.07 mm**.
+- Add 1.000 mm to the stored X offset with `M218`, and the point where the
+  bodies line up moves with it, in the same direction.
 
-- The correction falls towards zero: the sign was right.
-- The correction roughly doubles: write the other candidate.
+So the convention is: **the stored offset is how much further along X you
+command tool 1 to put its body where tool 0's body was.** The plugin still
+reports both candidates and still asks you to confirm by re-measuring, because
+that check costs one run and catches a firmware change.
 
-Record which one worked. This is a property of the firmware, not of your
-machine, so you only have to settle it once.
+Two caveats from the same measurements. The 1.000 mm change read back as about
+1.35 mm through the camera, so the pixel scale at that spot is not yet good to
+better than a third. And this test aligns the toolhead *bodies*, which measures
+the offset the firmware is applying, not the true separation of the nozzles. The
+true separation needs a view of the nozzle tips.
 
 ## Writing to the firmware
 
@@ -253,3 +259,26 @@ Printers", Manufacturing Letters 44 (2025) 884-892. They use HSV segmentation, a
 Hough circle transform and a right-angle prism, with a fixed 0.045 mm per pixel
 scale measured by hand in ImageJ. This plugin measures the scale instead, and
 covers XY only, because the camera looks straight up with no prism.
+
+## Status, 2026-09-05
+
+Working and verified on the machine:
+
+- Both camera streams, after three separate faults in the go2rtc path.
+- The plugin loads, and its serial layer reads and writes the hotend offset.
+  `M218` writes, persists and reads back on this firmware.
+- The camera model: 8.65 px/mm at Z150, focal length about 1339 px, lens plane
+  near bed level. Working at Z60 gives 0.05 mm per pixel.
+- Depth from a bed move segments the toolhead from the room cleanly.
+- Body alignment repeats to 0.07 mm, which sets the noise floor.
+
+Blocked on the camera itself:
+
+The camera views the toolhead from behind and below, not straight up at the
+nozzles. The nozzle tips are largely hidden by the extruder body, the lens is
+focused for long range so a close view is blurred, and about 39 percent of the
+central frame clips at Z60. Every method tried finds the nearest part of the
+toolhead, which is not a nozzle tip.
+
+The camera is roughly under X151 Y304 on the bed. Aim it straight up at a
+nozzle, focus it for about 40 mm, and the rest of the chain is ready.
