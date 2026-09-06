@@ -24,6 +24,74 @@ stands on the bed with its ring of white LEDs lit, and the toolhead comes down
 onto it. That camera answers about one request in eight, so its picture only
 changes every ten seconds or so.
 
+## What you need
+
+- A dual extruder Snapmaker A350, or another Marlin machine whose firmware
+  stores a hotend offset with `M218`. The plugin reads the value back after
+  every write and refuses to send one the toolhead would throw away.
+- OctoPrint 1.8 or later, on Python 3.7 or later.
+- A camera on the bed looking up at the nozzles, and a still image URL for it.
+  The Printables "XY Nozzle Alignment Camera" (model 1099576) is the mount
+  this was built against. go2rtc, mjpg-streamer or anything else that serves
+  a JPEG will do. An MJPEG stream URL as well makes a run five times faster.
+- `numpy`, `opencv-python-headless`, `Pillow` and `requests` in OctoPrint's
+  own Python. `pip` installs them with the plugin.
+
+## Install
+
+**Warning.** This plugin drives the nozzle down onto a camera that stands on
+the bed. Set `min_z` before the first run, and check the number. It is the
+height below which no move is ever made. The default of 20 mm suits a lens
+about 12 mm above the bed. A taller mount needs a higher floor.
+
+In OctoPrint, open **Settings**, then **Plugin Manager**, then **Get More**,
+and put this URL in the box marked "... from URL":
+
+```
+https://github.com/chrisns/OctoPrint-NozzleAlign/archive/refs/heads/main.zip
+```
+
+Restart OctoPrint when it asks.
+
+To install from a command line instead, use OctoPrint's own Python:
+
+```
+# a normal Linux install
+~/oprint/bin/pip install https://github.com/chrisns/OctoPrint-NozzleAlign/archive/refs/heads/main.zip
+sudo service octoprint restart
+```
+
+```
+REM OctoPrint on Windows, from the folder that holds its Python
+C:\OctoPrint\WPy64-31050\python-3.10.5.amd64\python.exe -m pip install https://github.com/chrisns/OctoPrint-NozzleAlign/archive/refs/heads/main.zip
+net stop OctoPrint5000 & net start OctoPrint5000
+```
+
+For development, clone the repository and install it in place:
+
+```
+git clone https://github.com/chrisns/OctoPrint-NozzleAlign.git
+~/oprint/bin/pip install -e OctoPrint-NozzleAlign
+```
+
+## Set it up
+
+1. Put the camera on the bed, lens up. Anywhere will do.
+2. Open **Settings**, then **Nozzle Align**. Set the snapshot URL, and the
+   stream URL if you have one. Check the floor, `min_z`.
+3. Open the **Nozzle Align** tab. The picture shows what the camera sees,
+   with a blue crosshair on the target and a circle on the bore the run will
+   steer on. Turn the lens until the bore is sharp. Red means the detector
+   trusts it; yellow means the score is too low.
+4. Press **Calibrate**. Stand clear: the machine homes and then sweeps the
+   bed.
+5. When it finishes, press **Write ... to the firmware**, then press
+   **Calibrate** again. The second run must report nozzle 1 landing within a
+   few hundredths of a millimetre of nozzle 0.
+
+Prefer your slicer? Take the numbers from the result table and write nothing
+to the firmware.
+
 ## What a run does
 
 Press **Calibrate** on the Nozzle Align tab. The run:
@@ -183,16 +251,6 @@ a burnt patch scored higher. So after the first find the bore is followed with
 a template cut from the last frame, and the detector only refines the centre
 close to where the template landed.
 
-## Install
-
-On the print PC, using the OctoPrint interpreter:
-
-```
-C:\OctoPrint\WPy64-31050\python-3.10.5.amd64\python.exe -m pip install numpy opencv-python-headless
-C:\OctoPrint\WPy64-31050\python-3.10.5.amd64\python.exe -m pip install -e C:\OctoPrint\plugins-src\nozzlealign
-net stop OctoPrint5000 & net start OctoPrint5000
-```
-
 ## The camera stream
 
 The run reads the MJPEG stream in a background thread and takes the newest
@@ -211,7 +269,7 @@ Check a stream like this. A working frame has a standard deviation well above
 20. A broken one sits at mean 128 with a standard deviation near 4.
 
 ```
-curl -s -o f.jpg "http://printpc.cns.me:1984/api/frame.jpeg?src=nozzle_cam"
+curl -s -o f.jpg "http://<your-host>:1984/api/frame.jpeg?src=nozzle_cam"
 ```
 
 ## Tests

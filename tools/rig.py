@@ -8,8 +8,10 @@ import numpy as np, cv2
 from PIL import Image
 
 S = os.path.dirname(os.path.abspath(__file__))
-HOST = "http://192.168.0.22:5000"
-CAM = "http://192.168.0.22:1984/api/frame.jpeg?src=nozzle_cam"
+# Point these at your own machine, or set OCTOPRINT_URL and NOZZLE_CAM_URL.
+HOST = os.environ.get("OCTOPRINT_URL", "http://octopi.local:5000")
+CAM = os.environ.get("NOZZLE_CAM_URL",
+                     "http://octopi.local:1984/api/frame.jpeg?src=nozzle_cam")
 KEY = open(os.path.join(S, ".opkey")).read().strip()   # not committed
 H = {"X-Api-Key": KEY, "Content-Type": "application/json"}
 

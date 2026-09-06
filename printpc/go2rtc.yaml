@@ -1,4 +1,4 @@
-# Deployed to C:\OctoPrint\go2rtc.yaml on printpc.cns.me.
+# Deployed to C:\OctoPrint\go2rtc.yaml on the Windows host that runs OctoPrint.
 #
 # Two USB cameras. One stream per physical device.
 # Never define more than one stream per device: a UVC device is exclusive and a

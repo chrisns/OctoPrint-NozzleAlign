@@ -5,10 +5,11 @@ plugin_identifier = "nozzlealign"
 plugin_package = "octoprint_nozzlealign"
 plugin_name = "OctoPrint-NozzleAlign"
 plugin_version = "0.1.0"
-plugin_description = "Measures the XY offset between two nozzles with a bed camera."
+plugin_description = ("Measures the XY offset between two nozzles with a camera on the "
+                      "bed, and writes it to the firmware.")
 plugin_author = "Chris Nesbitt-Smith"
 plugin_author_email = "chris@cns.me.uk"
-plugin_url = "https://github.com/cnsmith/3d-print-calibrate"
+plugin_url = "https://github.com/chrisns/OctoPrint-NozzleAlign"
 plugin_license = "AGPLv3"
 plugin_requires = [
     "numpy>=1.21",
