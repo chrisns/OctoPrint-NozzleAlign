@@ -50,6 +50,23 @@
     </div>
   </div>
 
+  <div class="control-group">
+    <label class="control-label">Bed search</label>
+    <div class="controls">
+      <input type="number" step="5" class="input-mini"
+             data-bind="value: settings.plugins.nozzlealign.bed_step_x">
+      <input type="number" step="5" class="input-mini"
+             data-bind="value: settings.plugins.nozzlealign.bed_step_y">
+      <input type="number" step="5" class="input-mini"
+             data-bind="value: settings.plugins.nozzlealign.search_z">
+      <span class="help-block">
+        Raster steps in X and Y, and the height, for the sweep of the whole
+        bed when the bore is not near the stored point. At Z90 the camera
+        sees 75 by 47 mm.
+      </span>
+    </div>
+  </div>
+
   <h4>Heights</h4>
   <div class="control-group">
     <label class="control-label">Floor (mm)</label>

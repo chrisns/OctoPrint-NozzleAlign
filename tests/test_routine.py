@@ -209,6 +209,31 @@ def test_the_camera_is_found_when_it_has_moved_a_little(monkeypatch):
     assert result["new_offset"][0] == pytest.approx(bridge.true_offset[0], abs=0.01)
 
 
+def test_the_camera_is_found_anywhere_on_the_bed(monkeypatch):
+    """The camera sits 100 mm from where the settings say."""
+    bridge, _, job, recorder = build(
+        monkeypatch, camera_xy=(80.0, 150.0),
+        bed_x_min=40.0, bed_x_max=205.0, bed_y_min=60.0, bed_y_max=270.0,
+        bed_step_x=55.0, bed_step_y=35.0)
+    result = run(job)
+    assert result is not None, recorder.text()
+    assert "searching the whole bed" in recorder.text()
+    assert "over the camera near" in recorder.text()
+    assert result["new_offset"][0] == pytest.approx(bridge.true_offset[0], abs=0.01)
+    assert result["new_offset"][1] == pytest.approx(bridge.true_offset[1], abs=0.01)
+    assert result["camera"]["camera_x"] == pytest.approx(80.0, abs=0.05)
+
+
+def test_no_toolhead_anywhere_is_a_clear_error(monkeypatch):
+    bridge, camera, job, recorder = build(
+        monkeypatch, camera_xy=(600.0, 600.0),
+        bed_x_min=40.0, bed_x_max=150.0, bed_y_min=60.0, bed_y_max=130.0)
+    run(job)
+    assert job.result is None
+    assert "never came into view" in recorder.last()["message"]
+    assert min(bridge.z_commands()) >= DEFAULTS["min_z"]
+
+
 def test_every_setting_the_routine_reads_is_declared():
     import re
     import pathlib

@@ -80,3 +80,14 @@ def average_frames(url, count=8, timeout=10.0, settle=0, attempts=4):
             % frame_health(stacked)
         )
     return stacked
+
+
+def motion_fraction(before, after, threshold=12.0):
+    """The fraction of the frame that changed between two frames.
+
+    X moves the toolhead and nothing else the camera can see, so a nudge in
+    X changes the picture only where the toolhead is. This is the coarse
+    test for whether the toolhead is over the camera at all.
+    """
+    difference = np.abs(np.asarray(after, dtype=np.float32) - np.asarray(before, dtype=np.float32))
+    return float((difference > float(threshold)).mean())

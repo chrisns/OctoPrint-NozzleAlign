@@ -223,7 +223,58 @@ class CalibrationRoutine(threading.Thread):
 
     # -- finding the bore -------------------------------------------------
 
-    def _search_for_bore(self):
+    def _search_bed(self):
+        """Find the camera anywhere on the bed, then descend onto it.
+
+        At the search height the field of view is about 75 by 47 mm, so a
+        raster of a few dozen points covers the bed. At each point the head
+        is nudged in X. Only the toolhead moves in the picture, so the share
+        of pixels that change says how much of the toolhead is in view. The
+        toolhead is wider than the field, so that share saturates over a few
+        neighbouring points; their weighted centre is the middle of the
+        toolhead, and both nozzles are within a nominal half offset of it.
+        The bore is then found by a wide ring at the working height.
+        """
+        cfg = self._cfg
+        height = min(float(cfg["search_z"]), float(cfg["safe_z"]))
+        self._move_z(height)
+        xs = list(np.arange(float(cfg["bed_x_min"]), float(cfg["bed_x_max"]) + 1e-9, float(cfg["bed_step_x"])))
+        ys = list(np.arange(float(cfg["bed_y_min"]), float(cfg["bed_y_max"]) + 1e-9, float(cfg["bed_step_y"])))
+        nudge = float(cfg["motion_nudge_mm"])
+        samples = []
+        self._progress("bed", "searching the bed for the camera at Z%.0f, %d points"
+                       % (height, len(xs) * len(ys)))
+        for row, y in enumerate(ys):
+            for x in (xs if row % 2 == 0 else xs[::-1]):
+                self._check_abort()
+                self._move_absolute(x=x, y=y)
+                time.sleep(float(cfg["settle_s"]))
+                before = self._frame()
+                self._move_relative(dx=nudge)
+                time.sleep(float(cfg["settle_s"]))
+                after = self._frame()
+                self._move_relative(dx=-nudge)
+                fraction = vision.motion_fraction(before, after, float(cfg["motion_threshold"]))
+                samples.append((fraction, x, y))
+                self._progress("bed", "X%.0f Y%.0f: %.0f%% of the picture moved" % (x, y, fraction * 100),
+                               x=x, y=y, moved=fraction)
+        peak = max(f for f, _, _ in samples)
+        if peak < float(cfg["motion_min_fraction"]):
+            raise CalibrationError(
+                "the toolhead never came into view over the bed; is the camera "
+                "plugged in and pointing up?")
+        plateau = [(f, x, y) for f, x, y in samples if f >= 0.5 * peak]
+        weight = sum(f for f, _, _ in plateau)
+        centre_x = sum(f * x for f, x, _ in plateau) / weight
+        centre_y = sum(f * y for f, _, y in plateau) / weight
+        self._progress("bed", "the toolhead is over the camera near X%.0f Y%.0f" % (centre_x, centre_y))
+        self._move_absolute(x=centre_x, y=centre_y)
+        self._move_z(float(cfg["camera_z"]))
+        time.sleep(float(cfg["settle_s"]))
+        self._forget()
+        return self._search_for_bore(span=float(cfg["bed_search_span_mm"]))
+
+    def _search_for_bore(self, span=None):
         """Look around the stored camera point at the working height.
 
         The camera is put down by hand, so it is rarely exactly where it was
@@ -232,7 +283,7 @@ class CalibrationRoutine(threading.Thread):
         direction, so the map built afterwards is not spoilt by backlash.
         """
         cfg = self._cfg
-        span = float(cfg["search_span_mm"])
+        span = float(cfg["search_span_mm"]) if span is None else float(span)
         step = float(cfg["search_step_mm"])
         origin = self._position()
         offsets = [(0.0, 0.0)]
@@ -254,8 +305,7 @@ class CalibrationRoutine(threading.Thread):
                     % (float(np.hypot(dx, dy)), score))
                 return where
         raise CalibrationError(
-            "no nozzle bore within %.0f mm of X%.1f Y%.1f at the working height; "
-            "run 'Find the camera' or set the camera position"
+            "no nozzle bore within %.0f mm of X%.1f Y%.1f at the working height"
             % (span, origin[0], origin[1]))
 
     def _focus_here(self, bore_px):
@@ -366,8 +416,13 @@ class CalibrationRoutine(threading.Thread):
         cfg = self._cfg
         bore = self._bore_in_view(radius=cfg["search_radius_px"])[0]
         if bore is None:
-            self._progress("search", "no bore at the stored camera point; searching")
-            bore = self._search_for_bore()
+            self._progress("search", "no bore at the stored camera point; searching around it")
+            try:
+                bore = self._search_for_bore()
+            except CalibrationError as exception:
+                self._progress("search", "%s; searching the whole bed" % exception)
+                self._retract_to_safe_z()
+                bore = self._search_bed()
         z = self._focus_here(bore)
         matrix = self._build_pixel_map()
         position, residual = self._centre_bore(matrix, "T0")

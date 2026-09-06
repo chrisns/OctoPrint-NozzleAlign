@@ -15,8 +15,13 @@ Press **Calibrate** on the Nozzle Align tab. The run:
 1. Homes, selects T0, and goes to the stored camera point through the safe
    height.
 2. Finds the nozzle bore in the picture. If it is not there, it searches a
-   ring of points around the stored point at the working height. The camera
-   is put down by hand and is never in quite the same place.
+   ring of points around the stored point at the working height. If that
+   fails too, it rises to Z90, where the camera sees 75 by 47 mm, and sweeps
+   the bed in a raster. At each point it nudges X. Only the toolhead moves in
+   the picture, so the share of pixels that change says how much of the
+   toolhead is in view. The weighted middle of the points where that share
+   peaks is the middle of the toolhead. It descends there and searches a
+   wider ring for the bore. The camera can be put anywhere on the bed.
 3. Sweeps Z and settles at the height where the bore is sharpest. The camera
    mount, the bed and the lift mechanism all move the focal plane by a
    millimetre or two, so the height is measured, not trusted.

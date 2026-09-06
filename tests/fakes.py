@@ -162,6 +162,10 @@ class BoreCamera(object):
         self.blur_per_mm = blur_per_mm
         self.centre_px = np.array([size[1] / 2.0, size[0] / 2.0])
         self.rng = np.random.default_rng(seed)
+        # the underside of the toolhead: a textured square above the nozzles
+        self.body_mm = 60.0
+        self.body_height = 6.0
+        self.texture = np.random.default_rng(seed + 1).normal(0.0, 1.0, (256, 256)).astype(np.float32)
 
     def scale(self, height):
         return self.scale_constant / max(1.0, height - self.lens_z)
@@ -172,12 +176,34 @@ class BoreCamera(object):
     def pixel(self, xy, height):
         return self.centre_px + self.matrix(height).dot(np.asarray(xy, dtype=float) - self.camera_xy)
 
+    def _draw_body(self, image, xs, ys):
+        """The toolhead underside, which moves with X and stays put with Y."""
+        import cv2
+
+        body_z = self.machine.z() + self.body_height
+        centre = self.machine.head_xy() + self.machine.true_offset / 2.0
+        inverse = np.linalg.inv(self.matrix(body_z))
+        px = np.stack([xs - self.centre_px[0], ys - self.centre_px[1]], axis=-1).astype(np.float32)
+        machine = px.reshape(-1, 2).dot(inverse.T).reshape(px.shape) + self.camera_xy - centre
+        inside = (np.abs(machine[..., 0]) <= self.body_mm / 2) & (np.abs(machine[..., 1]) <= self.body_mm / 2)
+        if not inside.any():
+            return image
+        u = np.floor(machine[..., 0] * 1.5).astype(int) % 256
+        v = np.floor(machine[..., 1] * 1.5).astype(int) % 256
+        layer = 130.0 + 16.0 * self.texture[v, u]
+        defocus = abs(body_z - self.focus_z) * self.blur_per_mm
+        if defocus > 0.4:
+            size_px = int(min(defocus, 12) * 6) | 1
+            layer = cv2.GaussianBlur(layer.astype(np.float32), (size_px, size_px), min(defocus, 12))
+        return np.where(inside, layer, image)
+
     def frame(self):
         import cv2
 
         height, width = self.size
         image = np.full((height, width), 90.0, dtype=np.float32)
         ys, xs = np.mgrid[0:height, 0:width]
+        image = self._draw_body(image, xs, ys)
         for tool in (0, 1):
             raised = 0.0 if tool == self.machine.tool else self.lift_mm
             nozzle_z = self.machine.z() + raised

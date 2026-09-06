@@ -35,6 +35,20 @@ DEFAULTS = dict(
     search_span_mm=12.0,
     search_step_mm=7.0,
     search_radius_px=600,
+    # finding the camera anywhere on the bed: a raster at the search height
+    # nudging X, because only the toolhead moves in the picture, then a wider
+    # ring at the working height around the best raster point
+    search_z=90.0,
+    bed_x_min=25.0,
+    bed_x_max=295.0,
+    bed_y_min=25.0,
+    bed_y_max=325.0,
+    bed_step_x=55.0,
+    bed_step_y=35.0,
+    motion_nudge_mm=4.0,
+    motion_threshold=12.0,
+    motion_min_fraction=0.03,
+    bed_search_span_mm=30.0,
     # focus sweep
     focus_span_mm=4.0,
     focus_step_mm=1.0,
