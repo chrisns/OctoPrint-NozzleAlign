@@ -16,10 +16,11 @@ archive: https://github.com/chrisns/OctoPrint-NozzleAlign/archive/refs/heads/mai
 
 tags:
 - calibration
-- dual extruder
 - camera
+- webcam
 - marlin
 - snapmaker
+- dual extruder
 
 screenshots:
 - url: /assets/img/plugins/nozzlealign/tab.png
