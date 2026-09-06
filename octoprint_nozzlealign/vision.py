@@ -213,15 +213,38 @@ def motion_blob(before, after, threshold=12.0):
     return float(largest) / float(mask.size)
 
 
-def moving_centroid(before, after, threshold=12.0):
-    """Where the pixels that changed sit, and what fraction of the frame they are."""
+def moving_region(before, after, threshold=12.0):
+    """The largest patch of moved texture: its centroid, its box and its fraction.
+
+    Returns ``(centroid, (x0, y0, x1, y1), fraction)`` or ``(None, None, 0)``.
+    """
+    import cv2
+
     difference = np.abs(_texture(after) - _texture(before))
-    mask = difference > float(threshold)
-    fraction = float(mask.mean())
-    if fraction <= 0:
-        return None, 0.0
-    ys, xs = np.nonzero(mask)
-    return (float(xs.mean()), float(ys.mean())), fraction
+    mask = (difference > float(threshold)).astype(np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
+    count, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    if count <= 1:
+        return None, None, 0.0
+    largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    x0, y0, w, h, area = stats[largest]
+    centroid = (float(centroids[largest][0]), float(centroids[largest][1]))
+    return centroid, (int(x0), int(y0), int(x0 + w), int(y0 + h)), float(area) / float(mask.size)
+
+
+def shift_in_box(before, after, box):
+    """How far the picture inside ``box`` moved between two frames, in pixels."""
+    import cv2
+
+    x0, y0, x1, y1 = box
+    a = _texture(before)[y0:y1, x0:x1]
+    b = _texture(after)[y0:y1, x0:x1]
+    if a.shape[0] < 32 or a.shape[1] < 32:
+        return (0.0, 0.0), 0.0
+    window = cv2.createHanningWindow((a.shape[1], a.shape[0]), cv2.CV_32F)
+    (dx, dy), response = cv2.phaseCorrelate(a, b, window)
+    return (float(dx), float(dy)), float(response)
 
 
 def shift_between(before, after):

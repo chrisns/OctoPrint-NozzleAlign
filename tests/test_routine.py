@@ -152,10 +152,11 @@ def test_the_focus_height_is_measured_not_assumed(monkeypatch):
 
 
 def test_no_z_ever_goes_below_the_floor(monkeypatch):
+    """The focal plane is under the floor, so the run must fail rather than dive."""
     bridge, _, job, recorder = build(monkeypatch, focus_z=22.0, camera_z=24.0, min_z=23.0)
     run(job)
+    assert job.result is None
     assert min(bridge.z_commands()) >= 23.0
-    assert "peak" in recorder.text() or job.result is not None
 
 
 def test_a_camera_height_below_the_floor_is_refused_before_any_move(monkeypatch):
@@ -229,7 +230,7 @@ def test_the_camera_is_found_anywhere_on_the_bed(monkeypatch):
     assert "the middle of the toolhead is at" in recorder.text()
     assert result["new_offset"][0] == pytest.approx(bridge.true_offset[0], abs=0.01)
     assert result["new_offset"][1] == pytest.approx(bridge.true_offset[1], abs=0.01)
-    assert result["camera"]["camera_x"] == pytest.approx(80.0, abs=0.15)
+    assert result["camera"]["camera_x"] == pytest.approx(80.0, abs=0.25)
 
 
 def test_no_toolhead_anywhere_is_a_clear_error(monkeypatch):

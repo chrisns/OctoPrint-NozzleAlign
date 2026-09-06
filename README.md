@@ -26,9 +26,15 @@ Press **Calibrate** on the Nozzle Align tab. The run:
    sighting is confirmed with a nudge, the head walks on until the toolhead
    leaves the picture in X and in Y, takes the middle of each stretch, and
    climbs to where the most of the toolhead moves with a nudge, which is its
-   middle to a few millimetres. It descends half an offset towards T0's side
-   and searches a 25 mm ring for the bore. The camera can be put anywhere on
-   the bed; one near the middle is found in about 15 seconds.
+   middle. The fraction that moves cannot place the toolhead in X, because
+   the toolhead is nearly as wide as the field there and the fraction is flat
+   across it; the position of the moving patch in the picture can, so the
+   run reads that instead. A nudge gives the picture's direction and scale
+   for machine X, and the offset of the patch from the middle of the picture
+   along that direction is how far to move. Two passes settle it to under a
+   millimetre. The run then descends half an offset towards T0's side and
+   searches a 25 mm ring for the bore. The camera can be put anywhere on the
+   bed; it is found in about 50 seconds.
 3. Sweeps Z and settles at the height where the bore is sharpest, coarse
    steps first and then fine ones around the peak. The camera mount, the bed
    and the lift mechanism all move the focal plane by a millimetre or two, so
@@ -129,9 +135,12 @@ running that wizard afterwards overwrites what this plugin stored.
 - The full measurement repeated three times to 1.6 microns in X and 3.0
   microns in Y, before the two-nozzle trap was found. The method was sound;
   the nozzle was wrong.
-- With X25.56 Y0.63 stored, four runs on 2026-09-06, with the camera moved
-  and turned between them, reported T1 landing within 0.01 to 0.03 mm of T0.
+- With X25.56 Y0.63 stored, five runs on 2026-09-06, with the camera moved
+  and turned between them, reported T1 landing within 0.00 to 0.03 mm of T0.
   That is the resolution of the M114 position report.
+- A full run from scratch takes 3 minutes 53 seconds: 70 s to home and
+  select T0, 50 s to find the camera, 45 s for the bore ring and the focus
+  sweep, and 100 s to measure both nozzles.
 - Backlash on reversal is about 0.1 mm. A probe measured straight after a
   reversal gave a 12.6 px/mm map with the two columns 0.98 aligned, which is
   useless. Reaching every measurement from the same direction gave 73 px/mm

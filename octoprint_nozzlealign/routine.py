@@ -447,36 +447,47 @@ class CalibrationRoutine(threading.Thread):
         y_mid = (first_y + last_y) / 2.0
         self._progress("bed", "the toolhead is over the camera near X%.0f Y%.0f" % (x_mid, y_mid))
 
-        # -- close in, where the toolhead is wider than the field ---------------
+        # -- close in: put the moving patch in the middle of the picture -------
+        # The fraction that moves is flat and noisy across X, because the
+        # toolhead is nearly as wide as the field, so it cannot place the
+        # toolhead in X. The patch's position in the picture can. A nudge
+        # gives the picture's direction and scale for machine X, and the
+        # offset of the patch from the picture's centre along that direction
+        # is how far to move. Two or three passes settle it.
         self._move_absolute(x=x_mid, y=y_mid, feedrate=feed)
         if abs(float(cfg["closein_z"]) - height) > 1e-6:
             self._move_z(float(cfg["closein_z"]))
-        step = float(cfg["closein_step_mm"])
-        measured = {}
-
-        def moved_at(x, y):
-            x, y = clamp(x, y)
-            key = (round(x, 3), round(y, 3))
-            if key not in measured:
-                measured[key] = nudge_at(x, y)
-            return measured[key], key
-
-        here = moved_at(x_mid, y_mid)[1]
-        for _ in range(int(cfg["closein_max_steps"])):
-            neighbours = [moved_at(here[0] + dx, here[1] + dy)
-                          for dx, dy in ((step, 0), (-step, 0), (0, step), (0, -step))]
-            best_fraction, best = max(neighbours)
-            if best_fraction <= measured[here]:
+        nudge = float(cfg["motion_nudge_mm"])
+        x_here = x_mid
+        for attempt in range(int(cfg["closein_max_steps"])):
+            self._check_abort()
+            time.sleep(float(cfg["settle_s"]))
+            before = self._frame_quick()
+            self._move_relative(dx=nudge)
+            time.sleep(float(cfg["settle_s"]))
+            after = self._frame_quick()
+            self._move_relative(dx=-nudge)
+            centroid, box, fraction = vision.moving_region(before, after, threshold)
+            if centroid is None or fraction < minimum:
+                raise CalibrationError(
+                    "the toolhead was seen at X%.0f Y%.0f and then lost" % (x_here, y_mid))
+            shift, response = vision.shift_in_box(before, after, box)
+            scale = float(np.hypot(*shift)) / nudge
+            if scale < float(cfg["closein_min_scale"]) or response < float(cfg["closein_min_response"]):
+                self._progress("bed", "cannot read the picture's X direction (%.1f px/mm, response %.2f); "
+                               "keeping X%.0f" % (scale, response, x_here))
                 break
-            here = best
-        if measured[here] < minimum:
-            raise CalibrationError(
-                "the toolhead was seen from Z%.0f but not from Z%.0f near X%.0f Y%.0f"
-                % (height, float(cfg["closein_z"]), here[0], here[1]))
-        near = [(f, x, y) for (x, y), f in measured.items()
-                if f >= 0.7 * measured[here] and abs(x - here[0]) <= step + 1e-6 and abs(y - here[1]) <= step + 1e-6]
-        weight = sum(f for f, _, _ in near)
-        centre = (sum(f * x for f, x, _ in near) / weight, sum(f * y for f, _, y in near) / weight)
+            unit = np.array(shift) / float(np.hypot(*shift))
+            centre_px = np.array([before.shape[1] / 2.0, before.shape[0] / 2.0])
+            offset_mm = float((np.array(centroid) - centre_px) @ unit) / scale
+            self._progress("bed", "the toolhead is %.1f mm along X from the lens (%.1f px/mm, %.0f%% in view)"
+                           % (offset_mm, scale, fraction * 100), offset=offset_mm, px_per_mm=scale)
+            if abs(offset_mm) < float(cfg["closein_done_mm"]):
+                break
+            step_mm = max(-float(cfg["closein_max_move_mm"]), min(float(cfg["closein_max_move_mm"]), -offset_mm))
+            x_here = min(max(x_here + step_mm, x_min), x_max)
+            self._move_absolute(x=x_here, feedrate=feed)
+        centre = (x_here, y_mid)
         self._progress("bed", "the middle of the toolhead is at X%.0f Y%.0f" % centre)
         # T0's active nozzle sits half an offset towards minus X from the
         # middle, and T1's raised one the other way. Starting the ring at
