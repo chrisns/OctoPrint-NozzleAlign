@@ -67,13 +67,6 @@ def pixels_per_mm(matrix):
     return float(np.sqrt(abs(np.linalg.det(matrix))))
 
 
-def mm_per_pixel(matrix):
-    """Inverse of :func:`pixels_per_mm`."""
-    scale = pixels_per_mm(matrix)
-    if scale == 0:
-        raise GeometryError("pixel scale is zero")
-    return 1.0 / scale
-
 
 def rotation_degrees(matrix):
     """Angle between machine X and the image X axis, for reporting only."""

@@ -5,7 +5,8 @@
         <img data-bind="attr: {src: overlayUrl}" class="nozzlealign-frame">
       </div>
       <p class="muted">
-        The blue crosshair is the target. The red circle is the detected tip.
+        The blue crosshair is the target. The red circle is the nozzle bore
+        that the run will steer on. Yellow means the score is too low to use.
       </p>
       <div class="btn-group">
         <button class="btn" data-bind="click: refreshPreview">Refresh</button>
@@ -17,21 +18,15 @@
     <div class="span5">
       <h4>Calibrate</h4>
       <p class="muted">
-        Put the camera anywhere on the bed. This homes the machine, sweeps the
-        bed until the camera sees the toolhead, works out where the camera is
-        and how high to sit above it, then measures the offset between the two
-        nozzles. You enter no coordinates.
-      </p>
-      <p class="muted">
-        Nothing about the camera is remembered. Move the camera and just run it
-        again.
+        Put the camera on the bed near where it was last time. The run homes,
+        finds the bore, sweeps Z for the sharpest picture, steers each nozzle
+        onto the same pixel and reports the offset that puts both nozzles on
+        one spot. It checks that the nozzle it measures is the active one.
       </p>
       <p data-bind="text: cameraText, visible: cameraText" class="text-success"></p>
       <div class="btn-group">
         <button class="btn btn-primary" data-bind="click: run,
                 enable: !running()">Calibrate</button>
-        <button class="btn" data-bind="click: discover,
-                enable: !running()">Find the camera only</button>
         <button class="btn btn-danger" data-bind="click: abort,
                 enable: running">Stop</button>
       </div>
@@ -44,8 +39,10 @@
       <table class="table table-condensed">
         <tr><th>Stored T1 offset</th>
             <td data-bind="text: storedOffsetText"></td></tr>
-        <tr><th>Nozzle 1 needed</th>
+        <tr><th>Nozzle 1 landed</th>
             <td data-bind="text: correctionText"></td></tr>
+        <tr><th>Offset that fixes it</th>
+            <td data-bind="text: newOffsetText"></td></tr>
         <tr><th>Residual after centring</th>
             <td data-bind="text: residualText"></td></tr>
         <tr><th>Image scale</th>
@@ -55,13 +52,11 @@
       </table>
 
       <p>
-        The sign of a Marlin hotend offset is not documented for this toolhead,
-        so both candidates are shown. Write one, then measure again. The
-        correction must fall towards zero. If it doubles, write the other one.
+        Write the offset, then calibrate again. The second run must report
+        nozzle 1 landing within a few microns of nozzle 0.
       </p>
       <div class="btn-group">
-        <button class="btn" data-bind="click: applyPlus, text: plusLabel"></button>
-        <button class="btn" data-bind="click: applyMinus, text: minusLabel"></button>
+        <button class="btn btn-primary" data-bind="click: applyNew, text: applyLabel"></button>
       </div>
       <p class="muted">
         Prefer the slicer instead? Put the numbers above into the tool offset

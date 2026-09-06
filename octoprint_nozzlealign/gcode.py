@@ -45,8 +45,10 @@ class GcodeBridge(object):
         self._printer = printer
         self._logger = logger
         self._lock = threading.Lock()
+        self._receive_lock = threading.Lock()
         self._event = threading.Event()
         self._collecting = False
+        self._interrupted = False
         self._lines = []
         self._position = None
 
@@ -54,16 +56,28 @@ class GcodeBridge(object):
 
     def on_gcode_received(self, comm_instance, line, *args, **kwargs):
         if self._collecting and line:
-            self._lines.append(line)
-            match = _POSITION_RE.search(line)
-            if match:
-                self._position = (
-                    float(match.group("x")),
-                    float(match.group("y")),
-                    float(match.group("z")),
-                )
-                self._event.set()
+            with self._receive_lock:
+                if not self._collecting:
+                    return line
+                self._lines.append(line)
+                match = _POSITION_RE.search(line)
+                if match:
+                    self._position = (
+                        float(match.group("x")),
+                        float(match.group("y")),
+                        float(match.group("z")),
+                    )
+                    self._event.set()
         return line
+
+    def interrupt(self):
+        """Wake a waiting caller at once, for an abort or a disconnect.
+
+        The caller sees no position and raises, instead of sitting out the
+        full move timeout after the operator pressed Stop.
+        """
+        self._interrupted = True
+        self._event.set()
 
     # -- primitives -------------------------------------------------------
 
@@ -72,18 +86,24 @@ class GcodeBridge(object):
         if not self._printer.is_operational():
             raise RuntimeError("printer is not connected")
         with self._lock:
-            self._lines = []
-            self._position = None
-            self._event.clear()
-            self._collecting = True
+            with self._receive_lock:
+                self._lines = []
+                self._position = None
+                self._interrupted = False
+                self._event.clear()
+                self._collecting = True
             try:
                 payload = list(commands) + ["M400", "M114"]
                 self._printer.commands(payload, tags={"plugin:nozzlealign"})
                 if not self._event.wait(timeout):
                     raise Timeout("no M114 reply within %.0fs" % timeout)
-                return list(self._lines), self._position
+                if self._interrupted:
+                    raise RuntimeError("interrupted while waiting for the printer")
+                with self._receive_lock:
+                    return list(self._lines), self._position
             finally:
-                self._collecting = False
+                with self._receive_lock:
+                    self._collecting = False
 
     def position(self, timeout=30.0):
         """Return the current (x, y, z) in machine units."""
@@ -137,10 +157,11 @@ def parse_hotend_offset(lines, tool=1):
     """
     for line in lines:
         match = _OFFSET_RE.search(line)
-        if match and int(match.group("t")) == tool:
+        if match and int(match.group("t")) == tool and match.group("x") and match.group("y"):
+            # A bare "M218 T1" echo carries no numbers and must not read as zero.
             return (
-                float(match.group("x") or 0.0),
-                float(match.group("y") or 0.0),
+                float(match.group("x")),
+                float(match.group("y")),
                 float(match.group("z") or 0.0),
             )
 
@@ -176,5 +197,28 @@ def parse_hotend_offset(lines, tool=1):
 
 
 def format_offset_command(tool, x, y):
-    """Build the M218 command that stores an XY hotend offset."""
-    return "M218 T%d X%.3f Y%.3f" % (tool, x, y)
+    """Build the M218 command that stores an XY hotend offset.
+
+    Two decimals, because that is all the Snapmaker toolhead keeps. Sending
+    more would make the read-back look wrong by the rounding.
+    """
+    return "M218 T%d X%.2f Y%.2f" % (tool, round(x, 2), round(y, 2))
+
+
+def within_toolhead_band(x, y, nominal_x=26.0, nominal_y=0.0, limit=1.2):
+    """Whether the Snapmaker toolhead module will keep this offset.
+
+    The module silently resets an X offset outside 26 +/- 1.2 mm, and a Y
+    offset outside 0 +/- 1.2 mm, to the default. Writing such a value does
+    not fail; it destroys the stored offset.
+    """
+    return abs(float(x) - float(nominal_x)) <= float(limit) and \
+        abs(float(y) - float(nominal_y)) <= float(limit)
+
+
+def read_back_matches(requested, written, tolerance=0.006):
+    """Whether the firmware kept what was asked, to its two decimals."""
+    if written is None:
+        return False
+    return abs(round(float(requested[0]), 2) - float(written[0])) < tolerance and \
+        abs(round(float(requested[1]), 2) - float(written[1])) < tolerance

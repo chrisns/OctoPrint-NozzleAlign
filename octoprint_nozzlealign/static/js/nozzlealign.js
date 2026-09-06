@@ -9,7 +9,7 @@ $(function () {
         self.live = ko.observable(false);
         self.log = ko.observable("");
         self.result = ko.observable(null);
-        self.cameraWarning = ko.observable("");
+        self.cameraText = ko.observable("");
         self.overlayUrl = ko.observable(
             OctoPrint.getBlueprintUrl("nozzlealign") + "overlay.jpg?t=" + Date.now()
         );
@@ -36,19 +36,12 @@ $(function () {
             self.log(self.log() + line + "\n");
         };
 
-        self.cameraText = ko.observable("");
-
-        self.discover = function () {
-            self.log("");
-            self.result(null);
-            OctoPrint.simpleApiCommand("nozzlealign", "discover", {})
-                .done(function () {
-                    self.running(true);
-                })
-                .fail(function (response) {
-                    self.append("error: " + errorText(response));
-                });
-        };
+        function errorText(response) {
+            if (response && response.responseJSON && response.responseJSON.error) {
+                return response.responseJSON.error;
+            }
+            return response && response.responseText ? response.responseText : "failed";
+        }
 
         self.run = function () {
             self.log("");
@@ -66,33 +59,21 @@ $(function () {
             OctoPrint.simpleApiCommand("nozzlealign", "abort", {});
         };
 
-        function errorText(response) {
-            if (response && response.responseJSON && response.responseJSON.error) {
-                return response.responseJSON.error;
-            }
-            return response && response.responseText ? response.responseText : "failed";
-        }
-
-        function applyOffset(pair) {
+        self.applyNew = function () {
+            var pair = self.result().new_offset;
             OctoPrint.simpleApiCommand("nozzlealign", "apply", {x: pair[0], y: pair[1]})
                 .done(function (data) {
                     self.append(
-                        "wrote X" + pair[0].toFixed(3) + " Y" + pair[1].toFixed(3) +
-                        "; firmware reports X" + data.written[0].toFixed(3) +
-                        " Y" + data.written[1].toFixed(3) +
-                        (data.verified ? " (verified)" : " (READ BACK DOES NOT MATCH)")
+                        "wrote X" + data.requested[0].toFixed(2) + " Y" + data.requested[1].toFixed(2) +
+                        "; firmware reports " + (data.written
+                            ? "X" + data.written[0].toFixed(2) + " Y" + data.written[1].toFixed(2)
+                            : "nothing") +
+                        (data.verified ? " (verified)" : " (READ BACK DOES NOT MATCH; the previous value was put back)")
                     );
                 })
                 .fail(function (response) {
                     self.append("apply failed: " + errorText(response));
                 });
-        }
-
-        self.applyPlus = function () {
-            applyOffset(self.result().candidates.plus);
-        };
-        self.applyMinus = function () {
-            applyOffset(self.result().candidates.minus);
         };
 
         function pair(values, digits) {
@@ -105,7 +86,11 @@ $(function () {
         });
         self.correctionText = ko.pureComputed(function () {
             var r = self.result();
-            return r ? pair(r.correction, 4) + " mm" : "";
+            return r ? pair(r.correction, 4) + " mm from nozzle 0" : "";
+        });
+        self.newOffsetText = ko.pureComputed(function () {
+            var r = self.result();
+            return r ? pair(r.new_offset, 3) : "";
         });
         self.residualText = ko.pureComputed(function () {
             var r = self.result();
@@ -119,14 +104,18 @@ $(function () {
             return r.px_per_mm.toFixed(1) + " px/mm, rotated " +
                    r.rotation_deg.toFixed(1) + " degrees";
         });
-        self.plusLabel = ko.pureComputed(function () {
+        self.applyLabel = ko.pureComputed(function () {
             var r = self.result();
-            return r ? "Write " + pair(r.candidates.plus, 3) : "";
+            return r ? "Write " + pair(r.new_offset, 2) + " to the firmware" : "";
         });
-        self.minusLabel = ko.pureComputed(function () {
-            var r = self.result();
-            return r ? "Write " + pair(r.candidates.minus, 3) : "";
-        });
+
+        function showCamera(camera) {
+            self.cameraText(
+                "T0 over the lens at X" + camera.camera_x.toFixed(2) +
+                " Y" + camera.camera_y.toFixed(2) +
+                ", sharpest at Z" + camera.camera_z.toFixed(2)
+            );
+        }
 
         self.onDataUpdaterPluginMessage = function (plugin, data) {
             if (plugin !== "nozzlealign") return;
@@ -135,22 +124,9 @@ $(function () {
                 self.refreshPreview();
             } else if (data.type === "done") {
                 self.running(false);
-                var found = null;
-                if (data.result && data.result.camera_z !== undefined) {
-                    found = data.result;
-                } else if (data.result && data.result.camera) {
-                    found = data.result.camera;
-                    self.result(data.result);
-                }
-                if (found) {
-                    self.cameraWarning("");
-                    self.cameraText(
-                        "X" + found.camera_x.toFixed(2) +
-                        " Y" + found.camera_y.toFixed(2) +
-                        ", focus at Z" + found.camera_z.toFixed(2) +
-                        " (" + found.px_per_mm.toFixed(1) + " px/mm, turned " +
-                        found.rotation_deg.toFixed(1) + " degrees from the machine axes)"
-                    );
+                self.result(data.result);
+                if (data.result && data.result.camera) {
+                    showCamera(data.result.camera);
                 }
                 self.append("finished");
             } else if (data.type === "failed") {
@@ -163,7 +139,13 @@ $(function () {
         };
 
         self.onBeforeBinding = function () {
-            // no camera position is required up front; every run measures it
+            OctoPrint.simpleApiGet("nozzlealign").done(function (data) {
+                self.running(!!data.running);
+                if (data.result) {
+                    self.result(data.result);
+                    if (data.result.camera) showCamera(data.result.camera);
+                }
+            });
         };
 
         self.onTabChange = function (current) {

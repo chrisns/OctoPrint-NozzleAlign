@@ -1,10 +1,9 @@
 """Drive the printer and the camera from this machine, for experiments.
 
 Everything here refuses to move unless OctoPrint reports the printer connected,
-and refuses any Z below FLOOR_Z.  FLOOR_Z starts high on purpose: the camera
-sits on the bed and its height is not yet known.
+and refuses any Z below FLOOR_Z, which is the hard floor the plugin uses too.
 """
-import io, json, os, subprocess, sys, time
+import io, json, os, re, subprocess, sys, time
 import numpy as np, cv2
 from PIL import Image
 
@@ -47,7 +46,8 @@ def _post(path, payload):
            "-d", json.dumps(payload), "-o", "/dev/null",
            "-w", "%{http_code}", HOST + path], what="POST " + path)
 
-FLOOR_Z = 60.0     # the camera sits on the bed; 60 mm still gives 19 px/mm
+HARD_FLOOR_Z = 20.0   # the lens sits at about Z12 on this mount; nothing goes below this
+FLOOR_Z = HARD_FLOOR_Z
 CEIL_Z = 200.0
 
 
@@ -84,6 +84,20 @@ def rel(dx=0.0, dy=0.0, dz=0.0, feed=1200, settle=5.0):
     if dz:
         raise SystemExit("use moveto for Z so the floor is checked")
     send(["G91", "G1 X%.4f Y%.4f F%d" % (dx, dy, feed), "G90", "M400"], settle)
+
+
+_POSITION = re.compile(r"X:\s*(-?\d+\.?\d*)\s+Y:\s*(-?\d+\.?\d*)\s+Z:\s*(-?\d+\.?\d*)")
+
+
+def position():
+    """The logical position the firmware reports to M114."""
+    send(["M114"], settle=2)
+    logs = _api("/api/printer?history=true&limit=60").get("logs", [])
+    for line in reversed(logs):
+        match = _POSITION.search(line)
+        if match:
+            return tuple(float(v) for v in match.groups())
+    raise SystemExit("no M114 reply in the terminal log")
 
 
 def frame(count=3, settle=1):

@@ -6,7 +6,6 @@ import pytest
 from nozzlealign_pkg.geometry import (
     GeometryError,
     build_pixel_map,
-    mm_per_pixel,
     pixel_error_to_mm,
     pixels_per_mm,
     rotation_degrees,
@@ -36,7 +35,6 @@ def test_build_map_recovers_scale_and_rotation():
     )
     assert np.allclose(matrix, truth)
     assert pixels_per_mm(matrix) == pytest.approx(80.0)
-    assert mm_per_pixel(matrix) == pytest.approx(1.0 / 80.0)
     assert rotation_degrees(matrix) == pytest.approx(0.0)
 
 

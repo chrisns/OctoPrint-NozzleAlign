@@ -18,10 +18,12 @@
     </div>
   </div>
 
-  <h4>Camera position on the bed</h4>
+  <h4>Where the camera was last time</h4>
   <div class="alert">
-    Use "Find the camera" on the Nozzle Align tab. It fills these in for you.
-    Only edit them by hand if the search fails.
+    Every run fills these in. They are where the active T0 nozzle sat over the
+    lens and the height at which its bore was sharpest. The next run starts
+    its search there. Edit them only if you have moved the camera further than
+    the search span.
   </div>
   <div class="control-group">
     <label class="control-label">X, Y, Z</label>
@@ -35,11 +37,50 @@
     </div>
   </div>
   <div class="control-group">
-    <label class="control-label">Safe Z</label>
+    <label class="control-label">Search span, step (mm)</label>
     <div class="controls">
-      <input type="number" step="0.1" class="input-small"
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.search_span_mm">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.search_step_mm">
+      <span class="help-block">
+        How far around the stored point the run looks for the bore, at the
+        working height.
+      </span>
+    </div>
+  </div>
+
+  <h4>Heights</h4>
+  <div class="control-group">
+    <label class="control-label">Floor (mm)</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.min_z">
+      <span class="help-block">
+        No move may go below this. The lens sits about 12 mm above the bed on
+        the standard mount. Raise this if your mount is taller.
+      </span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Safe Z (mm)</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
              data-bind="value: settings.plugins.nozzlealign.safe_z">
-      <span class="help-block">Every travel move goes through this height.</span>
+      <span class="help-block">Every travel move and every tool change happens at this height.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Focus sweep span, step (mm)</label>
+    <div class="controls">
+      <input type="number" step="0.5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.focus_span_mm">
+      <input type="number" step="0.25" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.focus_step_mm">
+      <span class="help-block">
+        The run sweeps this far above and below the stored Z and stops where
+        the bore is sharpest.
+      </span>
     </div>
   </div>
   <div class="control-group">
@@ -47,47 +88,6 @@
     <div class="controls">
       <input type="checkbox"
              data-bind="checked: settings.plugins.nozzlealign.home_first">
-    </div>
-  </div>
-
-  <h4>Finding the camera</h4>
-  <div class="control-group">
-    <label class="control-label">Search height</label>
-    <div class="controls">
-      <input type="number" step="1" class="input-small"
-             data-bind="value: settings.plugins.nozzlealign.search_z">
-      <span class="help-block">
-        The height the search starts from. It must clear everything on the bed.
-      </span>
-    </div>
-  </div>
-  <div class="control-group">
-    <label class="control-label">Search centre and span</label>
-    <div class="controls">
-      <input type="number" step="1" class="input-small"
-             data-bind="value: settings.plugins.nozzlealign.search_centre_x">
-      <input type="number" step="1" class="input-small"
-             data-bind="value: settings.plugins.nozzlealign.search_centre_y">
-      <input type="number" step="1" class="input-small"
-             data-bind="value: settings.plugins.nozzlealign.search_span_mm">
-    </div>
-  </div>
-  <div class="control-group">
-    <label class="control-label">Lowest allowed Z</label>
-    <div class="controls">
-      <input type="number" step="1" class="input-small"
-             data-bind="value: settings.plugins.nozzlealign.min_z">
-      <span class="help-block">
-        A hard floor. The search also measures where the lens is and stops above
-        it, so it normally stops before this.
-      </span>
-    </div>
-  </div>
-  <div class="control-group">
-    <label class="control-label">Clearance above the lens</label>
-    <div class="controls">
-      <input type="number" step="0.5" class="input-small"
-             data-bind="value: settings.plugins.nozzlealign.lens_clearance_mm">
     </div>
   </div>
 
@@ -103,77 +103,60 @@
     </div>
   </div>
   <div class="control-group">
-    <label class="control-label">Tolerance (mm)</label>
+    <label class="control-label">Backlash take-up (mm)</label>
     <div class="controls">
-      <input type="number" step="0.001" class="input-small"
-             data-bind="value: settings.plugins.nozzlealign.tolerance_mm">
+      <input type="number" step="0.1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.backlash_backoff_mm">
+      <span class="help-block">
+        Every measured position is reached from the same direction, after
+        overshooting by this much.
+      </span>
     </div>
   </div>
   <div class="control-group">
-    <label class="control-label">Maximum passes</label>
+    <label class="control-label">Tolerance (mm), passes</label>
     <div class="controls">
+      <input type="number" step="0.001" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.tolerance_mm">
       <input type="number" class="input-mini"
              data-bind="value: settings.plugins.nozzlealign.max_passes">
     </div>
   </div>
 
-  <h4>Detection</h4>
+  <h4>Bore detector</h4>
   <div class="control-group">
-    <label class="control-label">Strategy</label>
+    <label class="control-label">Radii (px)</label>
     <div class="controls">
-      <select data-bind="value: settings.plugins.nozzlealign.strategy">
-        <option value="motion">motion</option>
-        <option value="contour">contour</option>
-        <option value="hough">hough</option>
-        <option value="template">template</option>
-      </select>
-    </div>
-  </div>
-  <div class="control-group">
-    <label class="control-label">Motion probe (mm)</label>
-    <div class="controls">
-      <input type="number" step="0.1" class="input-small"
-             data-bind="value: settings.plugins.nozzlealign.motion_probe_mm">
+      <input type="number" class="input-mini"
+             data-bind="value: settings.plugins.nozzlealign.bore_core_r">
+      <input type="number" class="input-mini"
+             data-bind="value: settings.plugins.nozzlealign.bore_inner_r">
+      <input type="number" class="input-mini"
+             data-bind="value: settings.plugins.nozzlealign.bore_ring_lo">
+      <input type="number" class="input-mini"
+             data-bind="value: settings.plugins.nozzlealign.bore_ring_hi">
       <span class="help-block">
-        The motion strategy finds the nozzle by nudging it and watching which
-        pixels change. It needs no appearance settings at all.
+        Ignored centre, dark bore wall, then the bright collar from and to.
+        Sized for about 75 px/mm. Check the red circle on the tab.
       </span>
     </div>
   </div>
   <div class="control-group">
-    <label class="control-label">Dark nozzle</label>
+    <label class="control-label">Minimum score</label>
     <div class="controls">
-      <input type="checkbox"
-             data-bind="checked: settings.plugins.nozzlealign.contour_invert">
+      <input type="number" step="5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.bore_min_score">
+      <input type="number" step="5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.bore_track_score">
       <span class="help-block">
-        Tick when the nozzle is darker than its background.
+        For a first find, and for a bore already being followed.
       </span>
-    </div>
-  </div>
-  <div class="control-group">
-    <label class="control-label">Blur, minimum area</label>
-    <div class="controls">
-      <input type="number" class="input-mini"
-             data-bind="value: settings.plugins.nozzlealign.blur">
-      <input type="number" class="input-small"
-             data-bind="value: settings.plugins.nozzlealign.min_area">
-    </div>
-  </div>
-  <div class="control-group">
-    <label class="control-label">Hough radius, param2</label>
-    <div class="controls">
-      <input type="number" class="input-mini"
-             data-bind="value: settings.plugins.nozzlealign.min_radius">
-      <input type="number" class="input-mini"
-             data-bind="value: settings.plugins.nozzlealign.max_radius">
-      <input type="number" class="input-mini"
-             data-bind="value: settings.plugins.nozzlealign.hough_param2">
     </div>
   </div>
 
   <h4>Firmware guard</h4>
   <div class="control-group">
-    <label class="control-label">Expected offset X, Y</label>
+    <label class="control-label">Toolhead band centre X, Y</label>
     <div class="controls">
       <input type="number" step="0.01" class="input-small"
              data-bind="value: settings.plugins.nozzlealign.nominal_offset_x">
@@ -182,13 +165,14 @@
     </div>
   </div>
   <div class="control-group">
-    <label class="control-label">Allowed deviation (mm)</label>
+    <label class="control-label">Band half width (mm)</label>
     <div class="controls">
       <input type="number" step="0.1" class="input-small"
              data-bind="value: settings.plugins.nozzlealign.offset_limit_mm">
       <span class="help-block">
-        The plugin refuses to write an offset further than this from the
-        expected value.
+        The Snapmaker toolhead throws away an offset outside 26 &plusmn; 1.2 mm
+        in X, or 0 &plusmn; 1.2 mm in Y, and resets it to the default. The
+        plugin refuses to send such a value.
       </span>
     </div>
   </div>

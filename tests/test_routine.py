@@ -1,65 +1,41 @@
 # coding=utf-8
-"""End to end test of the closed loop against a simulated printer and camera."""
+"""End to end tests of the closed loop against a simulated printer and camera."""
 
 import numpy as np
 import pytest
 
 from nozzlealign_pkg import routine, vision
+from nozzlealign_pkg.settings import DEFAULTS
 
-from fakes import FakeBridge, FakeCamera, rotation_matrix
+from fakes import BoreCamera, FakeBridge
 
-CAMERA_XY = (150.0, 175.0)
-CENTRE_PX = (640.0, 400.0)
+cv2 = pytest.importorskip("cv2")
+
+# Where the active T0 nozzle sits over the lens in the fake machine frame.
+CAMERA_XY = (175.3, 284.9)
+FRAME = (400, 640)
 
 
 def make_config(**overrides):
-    config = dict(
+    config = dict(DEFAULTS)
+    config.update(
         snapshot_url="http://camera/frame.jpeg",
-        http_timeout=5.0,
         frame_average=1,
         camera_x=CAMERA_XY[0],
         camera_y=CAMERA_XY[1],
-        camera_z=3.0,
-        safe_z=50.0,
+        camera_z=30.0,
         home_first=True,
-        feedrate=3000,
-        fine_feedrate=600,
-        z_feedrate=600,
-        move_timeout=30.0,
-        home_timeout=60.0,
         tool_settle_s=0.0,
-        probe_distance=1.0,
-        tolerance_mm=0.005,
-        max_passes=8,
-        max_correction_mm=5.0,
-        target_x_px=CENTRE_PX[0],
-        target_y_px=CENTRE_PX[1],
-        strategy="contour",
-        circle_min_radius_px=60,
-        circle_max_radius_px=340,
-        circle_param2=55,
-        circle_edge_margin=0.12,
-        circle_max_drift=0.30,
-
-        motion_threshold=4.0,
-        motion_min_area=60,
-        motion_min_circularity=0.25,
-        motion_max_extent=0.4,
-        motion_min_coverage=0.5,
-        motion_probe_mm=0.6,
-        contour_invert=True,
-        blur=5,
-        min_area=200,
-        min_radius=10,
-        max_radius=200,
-        hough_param2=30,
-        min_confidence=0.3,
-        roi=None,
-        template=None,
-        nominal_offset_x=26.0,
-        nominal_offset_y=0.0,
-        offset_limit_mm=3.0,
-        save_to_eeprom=True,
+        settle_s=0.0,
+        target_x_px=FRAME[1] / 2.0,
+        target_y_px=FRAME[0] / 2.0,
+        search_span_mm=6.0,
+        search_step_mm=4.0,
+        search_radius_px=300,
+        bore_search_radius_px=220,
+        track_search_px=120,
+        focus_template_px=60,
+        max_passes=10,
     )
     config.update(overrides)
     return config
@@ -72,105 +48,175 @@ class Recorder(object):
     def __call__(self, payload):
         self.messages.append(payload)
 
+    def text(self):
+        return "\n".join(m.get("message", "") for m in self.messages)
+
+    def last(self):
+        return self.messages[-1]
+
 
 class NullLogger(object):
     def info(self, *args, **kwargs):
+        pass
+
+    def warning(self, *args, **kwargs):
         pass
 
     def exception(self, *args, **kwargs):
         pass
 
 
-def build(monkeypatch, tool_error, scale=60.0, rotation=7.0, **config_overrides):
-    bridge = FakeBridge(tool_error=tool_error)
-    matrix = rotation_matrix(scale, rotation)
-    camera = FakeCamera(bridge, matrix, CAMERA_XY, CENTRE_PX)
+def build(monkeypatch, bridge=None, camera_xy=CAMERA_XY, focus_z=32.0, **config_overrides):
+    bridge = bridge or FakeBridge()
+    camera = BoreCamera(bridge, camera_xy, focus_z=focus_z, size=FRAME)
     monkeypatch.setattr(
-        vision, "average_frames", lambda url, count=1, timeout=1.0, settle=0: camera.frame()
-    )
-    job = routine.CalibrationRoutine(bridge, make_config(**config_overrides), Recorder(), NullLogger())
-    return bridge, camera, job
+        vision, "average_frames",
+        lambda url, count=1, timeout=1.0, settle=0, attempts=4: camera.frame())
+    recorder = Recorder()
+    cameras = []
+    job = routine.CalibrationRoutine(
+        bridge, make_config(**config_overrides), recorder, NullLogger(),
+        on_camera=cameras.append)
+    job.cameras = cameras
+    return bridge, camera, job, recorder
 
 
-def test_measures_a_known_tool_error(monkeypatch):
-    error = (0.42, -0.31)
-    bridge, _, job = build(monkeypatch, error)
-    result = job._execute()
-    # nozzle 0 has no error, so it centres at the camera position
-    assert result["position_0"] == pytest.approx(list(CAMERA_XY), abs=0.01)
-    # nozzle 1 has to be commanded short by its own error
-    assert result["correction"] == pytest.approx([-error[0], -error[1]], abs=0.02)
-    assert result["residual_0_mm"] <= 0.005
-    assert result["residual_1_mm"] <= 0.005
+def run(job):
+    job.run()
+    return job.result
 
 
-def test_reports_the_measured_scale_and_rotation(monkeypatch):
-    _, _, job = build(monkeypatch, (0.1, 0.1), scale=72.0, rotation=15.0)
-    result = job._execute()
-    assert result["px_per_mm"] == pytest.approx(72.0, rel=0.05)
-    # the fake camera mirrors Y, so the reported angle is the mirrored one
-    assert abs(result["rotation_deg"]) == pytest.approx(15.0, abs=1.5)
+# -- the answer ---------------------------------------------------------------
+
+def test_recovers_the_true_offset_despite_backlash(monkeypatch):
+    bridge, _, job, recorder = build(monkeypatch)
+    result = run(job)
+    assert result is not None, recorder.text()
+    assert result["new_offset"][0] == pytest.approx(bridge.true_offset[0], abs=0.01)
+    assert result["new_offset"][1] == pytest.approx(bridge.true_offset[1], abs=0.01)
+    assert result["correction"][0] == pytest.approx(25.20 - 25.56, abs=0.01)
 
 
-def test_offers_both_sign_conventions(monkeypatch):
-    _, _, job = build(monkeypatch, (0.25, 0.0))
-    result = job._execute()
-    stored = result["stored_offset"]
-    correction = result["correction"]
-    assert result["candidates"]["plus"] == pytest.approx(
-        [stored[0] + correction[0], stored[1] + correction[1]], abs=1e-6
-    )
-    assert result["candidates"]["minus"] == pytest.approx(
-        [stored[0] - correction[0], stored[1] - correction[1]], abs=1e-6
-    )
+def test_a_correct_offset_measures_a_zero_correction(monkeypatch):
+    bridge = FakeBridge(stored_offset=(25.56, 0.64, -0.891), true_offset=(25.56, 0.64))
+    _, _, job, recorder = build(monkeypatch, bridge=bridge)
+    result = run(job)
+    assert result is not None, recorder.text()
+    assert abs(result["correction"][0]) < 0.01
+    assert abs(result["correction"][1]) < 0.01
 
 
-def test_zero_error_measures_zero(monkeypatch):
-    _, _, job = build(monkeypatch, (0.0, 0.0))
-    result = job._execute()
-    assert result["correction"] == pytest.approx([0.0, 0.0], abs=0.02)
+def test_the_corrected_offset_matches_the_machine():
+    # Measured 2026-09-06: T0 on target at X175.2744 Y284.9063, T1 on the
+    # same pixel at X174.7822 Y284.6174, with X25.07 Y0.35 stored.
+    new = routine.corrected_offset(
+        (25.07, 0.35, -0.891), (175.2744, 284.9063), (174.7822, 284.6174))
+    assert new[0] == pytest.approx(25.562, abs=0.001)
+    assert new[1] == pytest.approx(0.639, abs=0.001)
 
 
-def test_refuses_a_correction_beyond_the_limit(monkeypatch):
-    _, _, job = build(monkeypatch, (0.2, 0.0), max_correction_mm=0.05)
-    with pytest.raises(routine.CalibrationError) as caught:
-        job._execute()
-    assert "beyond" in str(caught.value)
+# -- the raised nozzle ---------------------------------------------------------
 
-
-def test_travels_through_the_safe_z(monkeypatch):
-    bridge, _, job = build(monkeypatch, (0.1, 0.1))
-    job._execute()
-    lowered = [i for i, c in enumerate(bridge.sent) if "Z3.000" in c]
-    raised = [i for i, c in enumerate(bridge.sent) if "Z50.000" in c]
-    assert lowered and raised
-    # every descent onto the camera is preceded by a climb to the safe height
-    for index in lowered:
-        assert any(r < index for r in raised)
-
-
-def test_stops_when_aborted(monkeypatch):
-    _, _, job = build(monkeypatch, (0.1, 0.1))
-    job.abort()
-    with pytest.raises(routine.Aborted):
-        job._execute()
-
-
-def test_fails_clearly_on_a_blank_camera(monkeypatch):
+def test_a_raised_t1_nozzle_over_the_lens_is_noticed_and_skipped(monkeypatch):
+    """The camera is where T1's raised nozzle sits under T0, as it was on the machine."""
     bridge = FakeBridge()
+    raised = np.array(CAMERA_XY) - bridge.true_offset - bridge.lift_shift
+    _, _, job, recorder = build(monkeypatch, bridge=bridge, camera_xy=CAMERA_XY,
+                                camera_x=raised[0], camera_y=raised[1])
+    result = run(job)
+    assert result is not None, recorder.text()
+    assert "raised T1 nozzle" in recorder.text()
+    assert result["new_offset"][0] == pytest.approx(bridge.true_offset[0], abs=0.01)
+    assert result["new_offset"][1] == pytest.approx(bridge.true_offset[1], abs=0.01)
+    assert result["camera"]["camera_x"] == pytest.approx(CAMERA_XY[0], abs=0.05)
 
-    def blank(url, count=1, timeout=1.0, settle=0):
-        raise vision.CaptureError("camera frame is blank")
 
-    monkeypatch.setattr(vision, "average_frames", blank)
-    job = routine.CalibrationRoutine(bridge, make_config(), Recorder(), NullLogger())
-    with pytest.raises(vision.CaptureError):
-        job._execute()
+# -- focus -----------------------------------------------------------------------
+
+def test_the_focus_height_is_measured_not_assumed(monkeypatch):
+    _, _, job, recorder = build(monkeypatch, focus_z=31.4, camera_z=29.0)
+    result = run(job)
+    assert result is not None, recorder.text()
+    assert result["focus_z"] == pytest.approx(31.4, abs=0.35)
+    assert job.cameras[-1]["camera_z"] == pytest.approx(31.4, abs=0.35)
 
 
-def test_fails_when_the_offset_cannot_be_read(monkeypatch):
-    bridge, _, job = build(monkeypatch, (0.1, 0.1))
-    bridge.read_hotend_offset = lambda tool=1, timeout=30.0: None
-    with pytest.raises(routine.CalibrationError) as caught:
-        job._execute()
-    assert "M218" in str(caught.value)
+def test_no_z_ever_goes_below_the_floor(monkeypatch):
+    bridge, _, job, recorder = build(monkeypatch, focus_z=22.0, camera_z=24.0, min_z=23.0)
+    run(job)
+    assert min(bridge.z_commands()) >= 23.0
+    assert "peak" in recorder.text() or job.result is not None
+
+
+def test_a_camera_height_below_the_floor_is_refused_before_any_move(monkeypatch):
+    bridge, _, job, recorder = build(monkeypatch, camera_z=15.0, min_z=20.0)
+    run(job)
+    assert job.result is None
+    assert recorder.last()["type"] == "failed"
+    assert "floor" in recorder.last()["message"]
+    # only the park move to the safe height, no travel and no descent
+    assert all(z >= DEFAULTS["safe_z"] for z in bridge.z_commands())
+    assert not any(c.startswith("G1 X") for c in bridge.sent)
+
+
+# -- failure and safety --------------------------------------------------------
+
+def test_a_lost_connection_fails_cleanly(monkeypatch):
+    bridge = FakeBridge(fail_after=40)
+    _, _, job, recorder = build(monkeypatch, bridge=bridge)
+    run(job)
+    assert job.result is None
+    assert recorder.last()["type"] == "failed"
+
+
+def test_an_abort_parks_high_on_t0(monkeypatch):
+    bridge, _, job, recorder = build(monkeypatch)
+    original = job._build_pixel_map
+
+    def abort_then_map():
+        job.abort()
+        return original()
+
+    job._build_pixel_map = abort_then_map
+    run(job)
+    assert recorder.last()["type"] == "aborted"
+    assert bridge.sent[-1] == "T0"
+    assert bridge.logical[2] == pytest.approx(DEFAULTS["safe_z"])
+
+
+def test_failure_to_converge_is_an_error_not_an_answer(monkeypatch):
+    _, _, job, recorder = build(monkeypatch, max_passes=1, tolerance_mm=0.0001)
+    run(job)
+    assert job.result is None
+    assert "did not settle" in recorder.last()["message"]
+
+
+def test_travel_goes_through_the_safe_height(monkeypatch):
+    bridge, _, job, _ = build(monkeypatch)
+    run(job)
+    heights = bridge.z_commands()
+    assert heights[0] == pytest.approx(DEFAULTS["safe_z"])
+    assert heights[-1] == pytest.approx(DEFAULTS["safe_z"])
+    assert bridge.sent[-1] == "T0"
+
+
+def test_the_camera_is_found_when_it_has_moved_a_little(monkeypatch):
+    bridge, _, job, recorder = build(monkeypatch, camera_x=CAMERA_XY[0] + 4.5,
+                                     camera_y=CAMERA_XY[1] - 3.0)
+    result = run(job)
+    assert result is not None, recorder.text()
+    assert "found the bore" in recorder.text()
+    assert result["new_offset"][0] == pytest.approx(bridge.true_offset[0], abs=0.01)
+
+
+def test_every_setting_the_routine_reads_is_declared():
+    import re
+    import pathlib
+
+    source = (pathlib.Path(__file__).resolve().parents[1]
+              / "octoprint_nozzlealign" / "routine.py").read_text()
+    keys = set(re.findall(r'cfg\[\s*"([a-z_]+)"\s*\]', source))
+    keys |= set(re.findall(r'cfg\.get\(\s*"([a-z_]+)"', source))
+    keys |= set(re.findall(r'self\._cfg\[\s*"([a-z_]+)"\s*\]', source))
+    missing = keys - set(DEFAULTS)
+    assert not missing, "routine reads settings with no default: %s" % sorted(missing)
