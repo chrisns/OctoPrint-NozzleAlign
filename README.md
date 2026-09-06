@@ -310,6 +310,41 @@ not what this lens and lighting produce.
    to one is worse on the other.
 5. Save the working height. Nothing goes below it.
 
+## The measurement, on the machine
+
+Each nozzle is steered until its bore sits on the same pixel, and the machine
+position is recorded. The difference between the two positions is the
+separation. Nothing depends on knowing the pixel scale accurately, because both
+nozzles finish on the *same* pixel, so lens distortion cancels out.
+
+Three runs on 2026-09-06:
+
+| run | X | Y |
+|---|---|---|
+| 1 | 25.0696 | 0.3540 |
+| 2 | 25.0734 | 0.3489 |
+| 3 | 25.0720 | 0.3559 |
+| mean | **25.0717** | **0.3529** |
+
+Repeatable to 1.6 microns in X and 3.0 in Y. The steering converged to under
+three microns of the target pixel every time.
+
+The machine stored X 25.2000 Y 0.3200, so it was out by −0.129 mm in X.
+
+### Two things that had to be right
+
+**Backlash.** A probe measured after a reversal comes up short, and the pixel
+map then came out nearly singular: 12.6 px/mm with its two columns 0.98 aligned.
+Steering with that asked for a 118 px move in the wrong direction. Approaching
+every measurement from the same side gives 73 px/mm with square columns from the
+identical probe. `geometry.backlash_free` and `geometry.validate_map` cover both
+halves of that.
+
+**Telling the bore from everything else.** Brightness alone picked a glint off
+the heater block 260 px from the nozzle. Darkness alone picked the burnt cone.
+The bore is a dark hole inside a bright collar, and only the pair identifies it.
+`nozzle.find_bore` scores that pattern and repeats to 0.01 px.
+
 ## Status, 2026-09-06
 
 Working and verified on the machine:
