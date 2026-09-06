@@ -13,7 +13,7 @@ import time
 
 import numpy as np
 
-from . import geometry, vision
+from . import geometry, nozzle, vision
 from .gcode import Timeout, format_offset_command
 
 
@@ -90,6 +90,8 @@ class CalibrationRoutine(threading.Thread):
 
     def _measure_tip(self, settle=2):
         """Average frames, detect the tip, and return its pixel position."""
+        if self._cfg["strategy"] == "circle":
+            return self._measure_circle(settle)
         if self._cfg["strategy"] == "motion":
             measured = self._motion_probe(dx=float(self._cfg["motion_probe_mm"]))
             if not measured["compact"]:
@@ -132,6 +134,44 @@ class CalibrationRoutine(threading.Thread):
         return np.array([x, y], dtype=float), confidence, details
 
     # -- motion -----------------------------------------------------------
+
+    def _measure_circle(self, settle=2):
+        """Find the nozzle as a circle and refine its centre by fitting the rim.
+
+        This is the strategy to use once the camera is aimed at the nozzles and
+        focused on them. A nozzle is then the most circular thing in the picture,
+        which is far easier than anything the motion strategies have to do, and
+        the rim fit gives a sub-pixel centre plus a residual that says how
+        trustworthy it is. A nozzle caked in burnt filament fits loosely and says
+        so.
+        """
+        cfg = self._cfg
+        frame = self._frame(settle=settle)
+        circles = nozzle.find_circles(
+            frame,
+            min_radius_px=int(cfg["circle_min_radius_px"]),
+            max_radius_px=int(cfg["circle_max_radius_px"]),
+            param2=int(cfg["circle_param2"]),
+        )
+        margin = float(cfg["circle_edge_margin"])
+        height, width = frame.shape
+        central = [c for c in circles
+                   if margin * width < c["x"] < (1 - margin) * width
+                   and margin * height < c["y"] < (1 - margin) * height]
+        if not central:
+            raise CalibrationError(
+                "no nozzle shaped circle in the middle of the frame; check the "
+                "camera is aimed at the nozzle and in focus")
+        rough = central[0]
+        try:
+            fine = nozzle.refine_centre(frame, rough)
+            drift = ((fine["x"] - rough["x"]) ** 2 + (fine["y"] - rough["y"]) ** 2) ** 0.5
+            if drift > rough["r"] * float(cfg["circle_max_drift"]):
+                fine = dict(rough, residual=float("nan"))
+        except nozzle.NozzleError:
+            fine = dict(rough, residual=float("nan"))
+        details = dict(radius=fine["r"], residual=fine.get("residual", float("nan")))
+        return np.array([fine["x"], fine["y"]], dtype=float), 1.0, details
 
     def _move_absolute(self, x=None, y=None, z=None, feedrate=None):
         self._check_abort()

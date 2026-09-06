@@ -9,7 +9,7 @@ import threading
 import flask
 import octoprint.plugin
 
-from . import discovery, geometry, routine, vision
+from . import discovery, geometry, nozzle, routine, vision
 from .gcode import GcodeBridge, format_offset_command
 
 __plugin_name__ = "XY Nozzle Alignment"
@@ -45,10 +45,14 @@ class NozzleAlignPlugin(
             frame_average=8,
             # where the camera sits on the bed; the routine refuses to run
             # until these are set, because it drives the nozzle down onto it
-            camera_x=None,
-            camera_y=None,
-            camera_z=None,
-            safe_z=50.0,
+            # Measured on this machine on 2026-09-06, with the camera aimed
+            # up at the nozzle and focused on it. These are a starting hint,
+            # not an assumption: every run still looks for the nozzle where it
+            # expects it and falls back to a sweep if it is not there.
+            camera_x=150.0,
+            camera_y=285.0,
+            camera_z=30.0,
+            safe_z=90.0,
             home_first=True,
             # motion
             feedrate=3000,
@@ -81,7 +85,8 @@ class NozzleAlignPlugin(
             map_check_tolerance=0.25,
             coarse_step=10.0,
             fine_step=2.0,
-            min_z=12.0,
+            # never below where the operator set the working height
+            min_z=30.0,
             lens_clearance_mm=6.0,
             max_blob_fraction=0.15,
             focus_window_px=240,
@@ -89,7 +94,15 @@ class NozzleAlignPlugin(
             template_size_px=96,
             discovery_tolerance_mm=0.2,
             # detection
-            strategy="motion",
+            # "circle" once the camera is aimed at the nozzles and focused on
+            # them, which is when a nozzle becomes the most circular thing in
+            # the frame. The motion strategies are for before that is true.
+            strategy="circle",
+            circle_min_radius_px=60,
+            circle_max_radius_px=340,
+            circle_param2=55,
+            circle_edge_margin=0.12,
+            circle_max_drift=0.30,
             motion_threshold=4.0,
             motion_min_area=60,
             # a nozzle paints a compact blob; the gantry beam paints a sliver

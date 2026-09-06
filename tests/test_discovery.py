@@ -18,6 +18,12 @@ def discovery_config(**overrides):
     config = make_config()
     config.update(
         strategy="motion",
+        circle_min_radius_px=60,
+        circle_max_radius_px=340,
+        circle_param2=55,
+        circle_edge_margin=0.12,
+        circle_max_drift=0.30,
+
         motion_threshold=4.0,
         motion_min_area=60,
         motion_min_circularity=0.25,

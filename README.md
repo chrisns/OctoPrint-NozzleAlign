@@ -279,6 +279,37 @@ been reported as the answer.
 Depth itself repeats to about 1 mm, so the measurement is precise. What it is
 measuring is simply not the tip.
 
+## The camera has to be aimed at the nozzle
+
+Everything above about depth and parallax was built to find a nozzle in a
+picture that did not really contain one. Once the camera points straight up at a
+nozzle and is focused on it, the problem changes completely: a nozzle is then
+the most circular thing in the frame, and its orifice is a clean dark circle at
+the centre of a bright brass cone.
+
+`nozzle.py` does that. It takes the strongest circles, refines each centre by
+fitting the rim to sub-pixel, and uses the known spacing between the two nozzles
+as a free check that it found the right two. The fit residual is a quality
+score: a clean rim fits tightly, a rim caked in burnt filament does not.
+
+Both the hex body and the orifice are detected, and they come out concentric.
+The hex is the coarse target and the orifice the fine one.
+
+Two other detectors were tried on the same frames and found nothing at all.
+TAXY's YOLOv8 nozzle model wants a much closer view, even on upscaled crops. The
+TAMV `SimpleBlobDetector` recipe wants a dark blob on a light field, which is
+not what this lens and lighting produce.
+
+### Setting the camera up
+
+1. Open the live stream and put a nozzle over the camera.
+2. Focus on the nozzle, not on the machine behind it.
+3. Watch the clipping. A rim blown out to white cannot be located precisely
+   however sharp the focus, so less light beats more focus once it saturates.
+4. Fit matching nozzles. A 0.8 and a 0.4 image differently, so a detector tuned
+   to one is worse on the other.
+5. Save the working height. Nothing goes below it.
+
 ## Status, 2026-09-06
 
 Working and verified on the machine:
