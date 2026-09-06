@@ -86,3 +86,39 @@ def pixel_error_to_mm(matrix, current_px, target_px):
     matrix = np.asarray(matrix, dtype=float)
     error = np.asarray(target_px, dtype=float) - np.asarray(current_px, dtype=float)
     return tuple(np.linalg.solve(matrix, error))
+
+
+def validate_map(matrix, min_scale=30.0, max_scale=130.0, max_cos=0.35):
+    """Whether a measured pixel map can be trusted to steer with.
+
+    Two failures both produced a matrix that looked like a matrix and was not
+    one. A probe move partly eaten by backlash gave 12.6 px/mm with the two
+    columns 0.98 aligned, which is nearly singular, and solving with it asked
+    for a move of 118 px in the wrong direction. A probe measured while the
+    nozzle drifted out of frame gave 213 px/mm.
+
+    So a map is checked before it is used: the scale must be physically
+    plausible, and the two columns must be close to perpendicular, because a
+    camera looking at a moving stage cannot make them anything else.
+    """
+    matrix = np.asarray(matrix, dtype=float)
+    scale = float(abs(np.linalg.det(matrix)) ** 0.5)
+    first, second = matrix[:, 0], matrix[:, 1]
+    norms = np.linalg.norm(first) * np.linalg.norm(second)
+    if norms <= 0:
+        return False, scale, 1.0
+    cosine = abs(float(first @ second) / norms)
+    ok = bool(min_scale < scale < max_scale and cosine < max_cos)
+    return ok, scale, cosine
+
+
+def backlash_free(dx, dy, backoff=1.0):
+    """The pair of moves that arrives at (dx, dy) from a fixed direction.
+
+    An axis gives back less than it was asked for when it reverses, so a probe
+    measured after a reversal is short and the map comes out wrong. Approaching
+    every measurement from the same side takes the slack up first. On this
+    machine that turned a 12.6 px/mm map with parallel columns into a 73 px/mm
+    map with square ones, from the same 1.5 mm probe.
+    """
+    return (dx - backoff, dy - backoff), (backoff, backoff)

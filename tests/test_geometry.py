@@ -71,3 +71,39 @@ def test_zero_distance_is_rejected():
 def test_parallel_moves_are_rejected():
     with pytest.raises(GeometryError):
         build_pixel_map([0.0, 0.0], [10.0, 0.0], [20.0, 0.0], 1.0)
+
+
+# -- guarding against a map that only looks like a map ----------------------
+
+
+def test_a_good_map_passes():
+    from nozzlealign_pkg.geometry import validate_map
+    # measured on the machine with the approach controlled for backlash
+    ok, scale, cosine = validate_map([[73.34, -5.48], [7.65, 73.24]])
+    assert ok
+    assert scale == pytest.approx(73.6, abs=1.0)
+    assert cosine < 0.05
+
+
+def test_a_backlash_wrecked_map_is_rejected():
+    """This one was measured for real, and steering with it moved 118 px wrong."""
+    from nozzlealign_pkg.geometry import validate_map
+    ok, scale, cosine = validate_map([[9.98, -35.58], [-11.66, 35.42]])
+    assert not ok
+    assert cosine > 0.9
+
+
+def test_an_implausible_scale_is_rejected():
+    from nozzlealign_pkg.geometry import validate_map
+    assert not validate_map([[213.0, 0.0], [0.0, 213.0]])[0]
+    assert not validate_map([[5.0, 0.0], [0.0, 5.0]])[0]
+
+
+def test_the_backlash_free_pair_arrives_at_the_right_place():
+    from nozzlealign_pkg.geometry import backlash_free
+    first, second = backlash_free(0.4, -0.3, backoff=1.0)
+    assert first[0] + second[0] == pytest.approx(0.4)
+    assert first[1] + second[1] == pytest.approx(-0.3)
+    # and the last leg is always the same direction, whatever the target
+    for dx, dy in ((5.0, 5.0), (-5.0, -5.0), (0.0, 0.0)):
+        assert backlash_free(dx, dy)[1] == (1.0, 1.0)
