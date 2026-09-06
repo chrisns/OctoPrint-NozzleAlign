@@ -205,7 +205,7 @@ def test_the_camera_is_found_when_it_has_moved_a_little(monkeypatch):
                                      camera_y=CAMERA_XY[1] - 3.0)
     result = run(job)
     assert result is not None, recorder.text()
-    assert "found the bore" in recorder.text()
+    assert "a bore" in recorder.text()
     assert result["new_offset"][0] == pytest.approx(bridge.true_offset[0], abs=0.01)
 
 

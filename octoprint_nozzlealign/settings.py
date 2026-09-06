@@ -34,7 +34,7 @@ DEFAULTS = dict(
     # finding the bore around the stored point, at the working height
     search_span_mm=12.0,
     search_step_mm=7.0,
-    search_radius_px=600,
+    search_radius_px=380,
     # finding the camera anywhere on the bed: a raster at the search height
     # nudging X, because only the toolhead moves in the picture, then a wider
     # ring at the working height around the best raster point
@@ -48,7 +48,7 @@ DEFAULTS = dict(
     motion_nudge_mm=4.0,
     motion_threshold=12.0,
     motion_min_fraction=0.03,
-    bed_search_span_mm=30.0,
+    bed_search_span_mm=35.0,
     # focus sweep
     focus_span_mm=4.0,
     focus_step_mm=1.0,
@@ -75,7 +75,7 @@ DEFAULTS = dict(
     # closed loop
     tolerance_mm=0.008,
     max_passes=8,
-    max_correction_mm=4.0,
+    max_correction_mm=6.0,
     active_check_mm=3.0,
     target_x_px=None,
     target_y_px=None,

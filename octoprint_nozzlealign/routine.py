@@ -48,6 +48,10 @@ class CalibrationError(Exception):
     """The routine could not finish."""
 
 
+class NotConverged(CalibrationError):
+    """A real nozzle was centred but never settled within the tolerance."""
+
+
 class CalibrationRoutine(threading.Thread):
     """Measures the XY offset between nozzle 0 and nozzle 1."""
 
@@ -233,7 +237,8 @@ class CalibrationRoutine(threading.Thread):
         toolhead is wider than the field, so that share saturates over a few
         neighbouring points; their weighted centre is the middle of the
         toolhead, and both nozzles are within a nominal half offset of it.
-        The bore is then found by a wide ring at the working height.
+        The caller then looks for the bore in a wide ring at the working
+        height.
         """
         cfg = self._cfg
         height = min(float(cfg["search_z"]), float(cfg["safe_z"]))
@@ -263,32 +268,39 @@ class CalibrationRoutine(threading.Thread):
             raise CalibrationError(
                 "the toolhead never came into view over the bed; is the camera "
                 "plugged in and pointing up?")
-        plateau = [(f, x, y) for f, x, y in samples if f >= 0.5 * peak]
-        weight = sum(f for f, _, _ in plateau)
-        centre_x = sum(f * x for f, x, _ in plateau) / weight
-        centre_y = sum(f * y for f, _, y in plateau) / weight
+        # Weak motion far from the toolhead, from its light moving on the
+        # mount, must not pull the answer. Only the peak and its neighbours
+        # count, weighted by how much moved.
+        peak_x, peak_y = max(samples)[1:]
+        near = [(f, x, y) for f, x, y in samples
+                if abs(x - peak_x) <= float(cfg["bed_step_x"]) + 1e-6
+                and abs(y - peak_y) <= float(cfg["bed_step_y"]) + 1e-6]
+        weight = sum(f for f, _, _ in near)
+        centre_x = sum(f * x for f, x, _ in near) / weight
+        centre_y = sum(f * y for f, _, y in near) / weight
         self._progress("bed", "the toolhead is over the camera near X%.0f Y%.0f" % (centre_x, centre_y))
-        self._move_absolute(x=centre_x, y=centre_y)
+        self._retract_to_safe_z()
+        self._arrive(centre_x, centre_y)
         self._move_z(float(cfg["camera_z"]))
         time.sleep(float(cfg["settle_s"]))
         self._forget()
-        return self._search_for_bore(span=float(cfg["bed_search_span_mm"]))
+        return centre_x, centre_y
 
-    def _search_for_bore(self, span=None):
-        """Look around the stored camera point at the working height.
+    def _bore_candidates(self, span):
+        """Bores found around the current point at the working height.
 
         The camera is put down by hand, so it is rarely exactly where it was
         last time. A ring of points spaced by most of the field of view covers
         a few centimetres in a few moves. Every point is reached from the same
-        direction, so the map built afterwards is not spoilt by backlash.
+        direction, so the map built afterwards is not spoilt by backlash. The
+        first candidate is at the starting point itself.
         """
         cfg = self._cfg
-        span = float(cfg["search_span_mm"]) if span is None else float(span)
         step = float(cfg["search_step_mm"])
         origin = self._position()
         offsets = [(0.0, 0.0)]
         radius = step
-        while radius <= span + 1e-9:
+        while radius <= float(span) + 1e-9:
             count = max(6, int(round(2 * np.pi * radius / step)))
             for index in range(count):
                 angle = 2 * np.pi * index / count
@@ -296,17 +308,16 @@ class CalibrationRoutine(threading.Thread):
             radius += step
         for dx, dy in offsets:
             self._check_abort()
-            self._arrive(origin[0] + dx, origin[1] + dy)
+            if (dx, dy) != (0.0, 0.0):
+                self._arrive(origin[0] + dx, origin[1] + dy)
+            self._forget()
             where, score = self._bore_in_view(radius=cfg["search_radius_px"])
             if where is not None:
                 self._progress(
                     "search",
-                    "found the bore %.1f mm from the stored point (score %.0f)"
+                    "a bore %.1f mm from the starting point (score %.0f)"
                     % (float(np.hypot(dx, dy)), score))
-                return where
-        raise CalibrationError(
-            "no nozzle bore within %.0f mm of X%.1f Y%.1f at the working height"
-            % (span, origin[0], origin[1]))
+                yield where
 
     def _focus_here(self, bore_px):
         """Sweep Z and stop at the sharpest height for this nozzle."""
@@ -403,30 +414,37 @@ class CalibrationRoutine(threading.Thread):
                     % (label, residual, limit))
             self._settle_move(dx=dx, dy=dy)
         else:
-            raise CalibrationError(
+            raise NotConverged(
                 "%s did not settle within %.4f mm in %d passes (last residual %.4f mm)"
                 % (label, tolerance, passes, residual))
         return self._position(), residual
 
     def _settle_on_active_nozzle(self):
-        """Put T0's active nozzle on the target and return its position and focus.
+        """Put the nozzle in view on the target and return its position and focus.
 
-        Returns the machine position, the focus height and the pixel map.
+        Returns the machine position, the residual, the focus height and the
+        pixel map. A candidate that will not focus, map or centre was not a
+        nozzle, and the search moves on to the next.
         """
         cfg = self._cfg
-        bore = self._bore_in_view(radius=cfg["search_radius_px"])[0]
-        if bore is None:
-            self._progress("search", "no bore at the stored camera point; searching around it")
-            try:
-                bore = self._search_for_bore()
-            except CalibrationError as exception:
-                self._progress("search", "%s; searching the whole bed" % exception)
+        for span in (float(cfg["search_span_mm"]), None):
+            if span is None:
+                self._progress("search", "no nozzle near the stored point; searching the whole bed")
                 self._retract_to_safe_z()
-                bore = self._search_bed()
-        z = self._focus_here(bore)
-        matrix = self._build_pixel_map()
-        position, residual = self._centre_bore(matrix, "T0")
-        return position, residual, z, matrix
+                self._search_bed()
+                span = float(cfg["bed_search_span_mm"])
+            for bore in self._bore_candidates(span):
+                try:
+                    z = self._focus_here(bore)
+                    matrix = self._build_pixel_map()
+                    position, residual = self._centre_bore(matrix, "T0")
+                    return position, residual, z, matrix
+                except NotConverged:
+                    raise
+                except (CalibrationError, focus.FocusError) as exception:
+                    self._progress("search", "that was not a nozzle: %s" % exception)
+                    self._move_z(float(cfg["camera_z"]))
+        raise CalibrationError("no nozzle found anywhere the camera could be")
 
     # -- main -------------------------------------------------------------
 
