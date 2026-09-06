@@ -320,6 +320,23 @@ class NozzleAlignPlugin(
     def is_blueprint_csrf_protected(self):
         return True
 
+    # -- software update --------------------------------------------------
+
+    def get_update_information(self):
+        """Let OctoPrint offer updates from the GitHub releases."""
+        return dict(
+            nozzlealign=dict(
+                displayName="XY Nozzle Alignment",
+                displayVersion=self._plugin_version,
+                type="github_release",
+                user="chrisns",
+                repo="OctoPrint-NozzleAlign",
+                current=self._plugin_version,
+                stable_branch=dict(name="Stable", branch="main", comittish=["main"]),
+                pip="https://github.com/chrisns/OctoPrint-NozzleAlign/archive/{target_version}.zip",
+            )
+        )
+
 
 class _ResultKeepingRoutine(routine.CalibrationRoutine):
     """Runs the measurement and keeps the result for the UI."""
@@ -341,4 +358,6 @@ def __plugin_load__():
     __plugin_hooks__ = {
         "octoprint.comm.protocol.gcode.received":
             __plugin_implementation__.gcode_received,
+        "octoprint.plugin.softwareupdate.check_config":
+            __plugin_implementation__.get_update_information,
     }
