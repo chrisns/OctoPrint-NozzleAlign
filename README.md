@@ -17,6 +17,13 @@ picture, centres each nozzle on the same pixel, homes again, and reports that
 nozzle 1 landed 0.01 mm from nozzle 0. The last few seconds are the write to
 the firmware and its read-back.
 
+![The same run seen from the workshop camera](docs/calibration-ha.gif)
+
+Another run, seen from the workshop camera instead. The nozzle camera rig
+stands on the bed with its ring of white LEDs lit, and the toolhead comes down
+onto it. That camera answers about one request in eight, so its picture only
+changes every ten seconds or so.
+
 ## What a run does
 
 Press **Calibrate** on the Nozzle Align tab. The run:
