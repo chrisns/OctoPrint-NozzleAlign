@@ -123,9 +123,9 @@ class NozzleAlignPlugin(
     def _store_camera_position(self, camera):
         """Keep where the active T0 nozzle sat over the lens, and how high.
 
-        The next run starts its search there. The values are a starting hint,
-        never a promise: every run looks for the bore again, sweeps the focus
-        again, and refuses any height below the floor.
+        The position is for information only; every run sweeps the bed for
+        the camera from scratch. The height is where the next focus sweep
+        starts, and no height below the floor is ever commanded.
         """
         for key in ("camera_x", "camera_y", "camera_z"):
             self._settings.set([key], round(float(camera[key]), 3))

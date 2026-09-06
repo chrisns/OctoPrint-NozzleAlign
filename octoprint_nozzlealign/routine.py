@@ -2,15 +2,14 @@
 """The closed loop XY nozzle alignment routine.
 
 The routine drives the toolhead over a camera that sits on the bed, so every
-motion goes through a safe Z first, every Z command passes one floor check,
-and the whole thing refuses to start until the camera position has been set.
+motion goes through a safe Z first and every Z command passes one floor check.
 
 What one run does, in order:
 
-1. Home, select T0 and go to the camera through the safe Z.
-2. Find the bore. If it is not where the settings say, search around there at
-   the working height, because the camera is never put down in quite the
-   same place twice.
+1. Home and select T0.
+2. Find the camera. Nothing is remembered about where it is: the head sweeps
+   the bed at the search height, watching for the toolhead to come into the
+   picture, closes in on it, descends and finds the bore in a ring.
 3. Sweep Z and settle at the height where the bore is sharpest. The camera
    mount, the bed and the lift mechanism all move the focal plane, so it is
    measured rather than trusted.
@@ -70,6 +69,7 @@ class CalibrationRoutine(threading.Thread):
         self._target = None
         self._template = None
         self._last_bore = None
+        self._stream = None
 
     # -- control ----------------------------------------------------------
 
@@ -89,13 +89,33 @@ class CalibrationRoutine(threading.Thread):
     # -- capture ----------------------------------------------------------
 
     def _frame(self, settle=1):
+        """An averaged frame made after now."""
         self._check_abort()
+        if self._stream is not None:
+            return self._stream.average(int(self._cfg["frame_average"]))
         return vision.average_frames(
             self._cfg["snapshot_url"],
             count=int(self._cfg["frame_average"]),
             timeout=float(self._cfg["http_timeout"]),
             settle=settle,
         )
+
+    def _frame_now(self):
+        """One frame made after now, as fast as the camera gives it."""
+        self._check_abort()
+        if self._stream is not None:
+            return self._stream.frame_after(time.time())[0]
+        return vision.fetch_frame(self._cfg["snapshot_url"], float(self._cfg["http_timeout"]))
+
+    def _open_stream(self):
+        url = self._cfg.get("stream_url")
+        if url:
+            self._stream = vision.FrameStream(url, float(self._cfg["http_timeout"])).start()
+
+    def _close_stream(self):
+        if self._stream is not None:
+            self._stream.stop()
+            self._stream = None
 
     def _find_bore(self, frame, near=None, radius=None):
         cfg = self._cfg
@@ -177,7 +197,7 @@ class CalibrationRoutine(threading.Thread):
         """The one place a Z is commanded, so the floor is checked once."""
         self._check_abort()
         floor = float(self._cfg["min_z"])
-        ceiling = float(self._cfg["safe_z"])
+        ceiling = max(float(self._cfg["safe_z"]), float(self._cfg["search_z"]))
         if z < floor - 1e-9:
             raise CalibrationError(
                 "refusing Z%.3f: below the %.1f mm floor" % (z, floor))
@@ -227,64 +247,245 @@ class CalibrationRoutine(threading.Thread):
 
     # -- finding the bore -------------------------------------------------
 
+    def _frame_quick(self):
+        return self._frame_now()
+
+    def _moved_fraction_after_nudge(self):
+        """Nudge X and report how much of the picture one moving thing covers."""
+        cfg = self._cfg
+        nudge = float(cfg["motion_nudge_mm"])
+        before = self._frame_quick()
+        self._move_relative(dx=nudge)
+        time.sleep(float(cfg["settle_s"]))
+        after = self._frame_quick()
+        self._move_relative(dx=-nudge)
+        return vision.motion_blob(before, after, float(cfg["motion_threshold"]))
+
     def _search_bed(self):
         """Find the camera anywhere on the bed, then descend onto it.
 
-        At the search height the field of view is about 75 by 47 mm, so a
-        raster of a few dozen points covers the bed. At each point the head
-        is nudged in X. Only the toolhead moves in the picture, so the share
-        of pixels that change says how much of the toolhead is in view. The
-        toolhead is wider than the field, so that share saturates over a few
-        neighbouring points; their weighted centre is the middle of the
-        toolhead, and both nozzles are within a nominal half offset of it.
-        The caller then looks for the bore in a wide ring at the working
-        height.
+        Nothing is assumed about where the camera is. At Z90, where the
+        camera sees about 75 by 47 mm, the head sweeps X back and forth in
+        steps, one row of Y at a time, and each frame is compared with the
+        one before. The bed and the camera do not move with X, so only the
+        toolhead can change the texture in the picture. A sighting is
+        confirmed with a nudge, which must move one large connected patch of
+        texture: the toolhead's cable chain and the flicker of its light
+        change scattered pixels, not a patch. Then the head walks on along X
+        until the toolhead leaves the picture, and up and down Y likewise;
+        the middle of each stretch is the middle of the toolhead to within a
+        step. The toolhead is wider than the field at this height, so a
+        climb to where the most of it moves finds its middle. Both
+        nozzles are within half an offset of that. Returns the ring span to
+        search for the bore at the working height.
         """
         cfg = self._cfg
-        height = min(float(cfg["search_z"]), float(cfg["safe_z"]))
+        x_min, x_max = float(cfg["bed_x_min"]), float(cfg["bed_x_max"])
+        y_min, y_max = float(cfg["bed_y_min"]), float(cfg["bed_y_max"])
+        feed = int(cfg["sweep_feedrate"])
+        threshold = float(cfg["motion_threshold"])
+        minimum = float(cfg["motion_min_blob"])
+        step = float(cfg["sweep_step_mm"])
+
+        def clamp(x, y):
+            return min(max(x, x_min), x_max), min(max(y, y_min), y_max)
+
+        def nudge_at(x, y):
+            x, y = clamp(x, y)
+            self._check_abort()
+            self._move_absolute(x=x, y=y, feedrate=feed)
+            time.sleep(float(cfg["settle_s"]))
+            fraction = self._moved_fraction_after_nudge()
+            self._progress("bed", "X%.0f Y%.0f: %.0f%% of the texture moved" % (x, y, fraction * 100),
+                           x=x, y=y, moved=fraction)
+            return fraction
+
+        # -- sighting: a rectangle growing out from the middle of the bed --------
+        # The camera is usually put down near the middle, so the search starts
+        # there and grows outward. Frames can only be compared along X within
+        # one row, because a Y move carries the camera with the bed and changes
+        # everything, so each ring scans its two new rows along X and extends
+        # every older row by one column each side, comparing the new frame
+        # with the one kept at that row's edge.
+        height = float(cfg["search_z"])
         self._move_z(height)
-        xs = list(np.arange(float(cfg["bed_x_min"]), float(cfg["bed_x_max"]) + 1e-9, float(cfg["bed_step_x"])))
-        ys = list(np.arange(float(cfg["bed_y_min"]), float(cfg["bed_y_max"]) + 1e-9, float(cfg["bed_step_y"])))
-        nudge = float(cfg["motion_nudge_mm"])
-        samples = []
-        self._progress("bed", "searching the bed for the camera at Z%.0f, %d points"
-                       % (height, len(xs) * len(ys)))
-        for row, y in enumerate(ys):
-            for x in (xs if row % 2 == 0 else xs[::-1]):
+        row_gap = float(cfg["bed_row_mm"])
+        cx = (x_min + x_max) / 2.0
+        cy = (y_min + y_max) / 2.0
+        self._progress("bed", "searching for the camera from the middle of the bed outwards at Z%.0f" % height)
+        edges = {}       # (x, y) -> frame at a scanned edge of a row
+
+        def sweep_row(y, x_from, x_to):
+            """Move along the row in one go, watching for the toolhead.
+
+            Frames are taken while the head moves, and each is compared with
+            the one before. The first pair that differs by one big patch of
+            texture puts the toolhead in view; where the head was then is
+            read from the clock and the feedrate, good to a step or so, and
+            the nudge that follows confirms it.
+            """
+            self._check_abort()
+            self._move_absolute(x=x_from, y=y, feedrate=feed)
+            time.sleep(float(cfg["settle_s"]))
+            self._frame_quick()
+            previous = self._frame_now()
+            speed = float(cfg["sweep_feedrate"]) / 60.0
+            distance = abs(x_to - x_from)
+            direction = 1.0 if x_to > x_from else -1.0
+            self._bridge.send(["G90", "G1 X%.4f F%d" % (x_to, int(cfg["sweep_feedrate"]))])
+            started = time.time()
+            hit = None
+            while time.time() - started < distance / speed + float(cfg["sweep_overrun_s"]):
                 self._check_abort()
-                self._move_absolute(x=x, y=y)
-                time.sleep(float(cfg["settle_s"]))
-                before = self._frame()
-                self._move_relative(dx=nudge)
-                time.sleep(float(cfg["settle_s"]))
-                after = self._frame()
-                self._move_relative(dx=-nudge)
-                fraction = vision.motion_fraction(before, after, float(cfg["motion_threshold"]))
-                samples.append((fraction, x, y))
-                self._progress("bed", "X%.0f Y%.0f: %.0f%% of the picture moved" % (x, y, fraction * 100),
-                               x=x, y=y, moved=fraction)
-        peak = max(f for f, _, _ in samples)
-        if peak < float(cfg["motion_min_fraction"]):
+                frame = self._frame_now()
+                now = time.time() - started
+                if hit is None and vision.motion_blob(previous, frame, threshold) >= minimum:
+                    hit = x_from + direction * min(distance, speed * max(0.0, now - float(cfg["sweep_lag_s"])))
+                previous = frame
+            self._bridge.run([], timeout=float(cfg["move_timeout"]))
+            return hit
+
+        def look(x, y, compare):
+            """Move, take a frame, and say whether the texture changed since ``compare``."""
+            self._check_abort()
+            self._move_absolute(x=x, y=y, feedrate=feed)
+            frame = self._frame_quick()
+            # The toolhead 20 mm further on is one big patch of moved texture.
+            # The cable chain and the light are scattered pixels and are not.
+            changed = compare is not None and \
+                vision.motion_blob(compare, frame, threshold) >= minimum
+            return frame, changed
+
+        def confirmed(x, y, fraction_hint):
+            self._progress("bed", "something changed at X%.0f Y%.0f; checking" % (x, y), x=x, y=y)
+            if nudge_at(x, y) >= minimum:
+                return True
+            return False
+
+        sighting = None
+        ring = 0
+        while sighting is None:
+            half_x, half_y = ring * step, ring * row_gap
+            xs = [x for x in (cx + i * step for i in range(-ring, ring + 1)) if x_min - 1e-6 <= x <= x_max + 1e-6]
+            ys = [y for y in (cy + j * row_gap for j in range(-ring, ring + 1)) if y_min - 1e-6 <= y <= y_max + 1e-6]
+            if ring > 0 and cx - half_x < x_min - 1e-6 and cx + half_x > x_max + 1e-6 \
+                    and cy - half_y < y_min - 1e-6 and cy + half_y > y_max + 1e-6:
+                break
+            new_rows = [y for y in (cy - half_y, cy + half_y) if y in ys] if ring > 0 else [cy]
+            old_rows = [y for y in ys if y not in new_rows]
+            new_columns = [x for x in (cx - half_x, cx + half_x) if x in xs] if ring > 0 else []
+            # the new rows, scanned along X in one move each
+            for index, y in enumerate(dict.fromkeys(new_rows)):
+                order = xs if index % 2 == 0 else xs[::-1]
+                if len(order) > 1:
+                    hit = sweep_row(y, order[0], order[-1])
+                    if hit is not None:
+                        near_x = min(xs, key=lambda x: abs(x - hit))
+                        for x in (near_x, near_x - step, near_x + step):
+                            if x_min - 1e-6 <= x <= x_max + 1e-6 and confirmed(x, y, None):
+                                sighting = (x, y, 1 if order is xs else -1)
+                                break
+                    if sighting is not None:
+                        break
+                    for x in (xs[0], xs[-1]):
+                        self._move_absolute(x=x, y=y, feedrate=feed)
+                        edges[(x, y)] = self._frame_quick()
+                else:
+                    self._move_absolute(x=order[0], y=y, feedrate=feed)
+                    edges[(order[0], y)] = self._frame_quick()
+                if sighting is not None:
+                    break
+            if sighting is not None or ring == 0:
+                if sighting is None and ring == 0:
+                    ring += 1
+                    continue
+                break
+            # the older rows, extended by the new columns
+            for x in dict.fromkeys(new_columns):
+                inner = x + step if x < cx else x - step
+                direction = -1 if x < cx else 1
+                for y in old_rows:
+                    compare = edges.get((inner, y))
+                    frame, changed = look(x, y, compare)
+                    edges[(x, y)] = frame
+                    if changed and confirmed(x, y, None):
+                        sighting = (x, y, direction)
+                        break
+                if sighting is not None:
+                    break
+            for key in list(edges):
+                if key[0] not in (xs[0], xs[-1]):
+                    del edges[key]
+            ring += 1
+        if sighting is None:
             raise CalibrationError(
                 "the toolhead never came into view over the bed; is the camera "
                 "plugged in and pointing up?")
-        # Weak motion far from the toolhead, from its light moving on the
-        # mount, must not pull the answer. Only the peak and its neighbours
-        # count, weighted by how much moved.
-        peak_x, peak_y = max(samples)[1:]
-        near = [(f, x, y) for f, x, y in samples
-                if abs(x - peak_x) <= float(cfg["bed_step_x"]) + 1e-6
-                and abs(y - peak_y) <= float(cfg["bed_step_y"]) + 1e-6]
+
+        # -- the middle of the toolhead, from where it leaves the picture -------
+        x, y, direction = sighting
+        last_x = x
+        probe = x + direction * step
+        while x_min <= probe <= x_max and nudge_at(probe, y) >= minimum:
+            last_x = probe
+            probe += direction * step
+        first_x = x
+        probe = x - direction * step
+        while x_min <= probe <= x_max and nudge_at(probe, y) >= minimum:
+            first_x = probe
+            probe -= direction * step
+        x_mid = (first_x + last_x) / 2.0
+        last_y = first_y = y
+        probe = y + step
+        while probe <= y_max and nudge_at(x_mid, probe) >= minimum:
+            last_y = probe
+            probe += step
+        probe = y - step
+        while probe >= y_min and nudge_at(x_mid, probe) >= minimum:
+            first_y = probe
+            probe -= step
+        y_mid = (first_y + last_y) / 2.0
+        self._progress("bed", "the toolhead is over the camera near X%.0f Y%.0f" % (x_mid, y_mid))
+
+        # -- close in, where the toolhead is wider than the field ---------------
+        self._move_absolute(x=x_mid, y=y_mid, feedrate=feed)
+        if abs(float(cfg["closein_z"]) - height) > 1e-6:
+            self._move_z(float(cfg["closein_z"]))
+        step = float(cfg["closein_step_mm"])
+        measured = {}
+
+        def moved_at(x, y):
+            x, y = clamp(x, y)
+            key = (round(x, 3), round(y, 3))
+            if key not in measured:
+                measured[key] = nudge_at(x, y)
+            return measured[key], key
+
+        here = moved_at(x_mid, y_mid)[1]
+        for _ in range(int(cfg["closein_max_steps"])):
+            neighbours = [moved_at(here[0] + dx, here[1] + dy)
+                          for dx, dy in ((step, 0), (-step, 0), (0, step), (0, -step))]
+            best_fraction, best = max(neighbours)
+            if best_fraction <= measured[here]:
+                break
+            here = best
+        if measured[here] < minimum:
+            raise CalibrationError(
+                "the toolhead was seen from Z%.0f but not from Z%.0f near X%.0f Y%.0f"
+                % (height, float(cfg["closein_z"]), here[0], here[1]))
+        near = [(f, x, y) for (x, y), f in measured.items()
+                if f >= 0.7 * measured[here] and abs(x - here[0]) <= step + 1e-6 and abs(y - here[1]) <= step + 1e-6]
         weight = sum(f for f, _, _ in near)
-        centre_x = sum(f * x for f, x, _ in near) / weight
-        centre_y = sum(f * y for f, _, y in near) / weight
-        self._progress("bed", "the toolhead is over the camera near X%.0f Y%.0f" % (centre_x, centre_y))
-        self._retract_to_safe_z()
-        self._arrive(centre_x, centre_y)
+        centre = (sum(f * x for f, x, _ in near) / weight, sum(f * y for f, _, y in near) / weight)
+        self._progress("bed", "the middle of the toolhead is at X%.0f Y%.0f" % centre)
+        # T0's active nozzle sits half an offset towards minus X from the
+        # middle, and T1's raised one the other way. Starting the ring at
+        # T0's side puts the active nozzle first in line.
+        self._arrive(centre[0] - float(cfg["nominal_offset_x"]) / 2.0, centre[1])
         self._move_z(float(cfg["camera_z"]))
         time.sleep(float(cfg["settle_s"]))
         self._forget()
-        return centre_x, centre_y
+        return float(cfg["bed_search_span_mm"])
 
     def _bore_candidates(self, span):
         """Bores found around the current point at the working height.
@@ -320,32 +521,50 @@ class CalibrationRoutine(threading.Thread):
                 yield where
 
     def _focus_here(self, bore_px):
-        """Sweep Z and stop at the sharpest height for this nozzle."""
+        """Sweep Z and stop at the sharpest height for this nozzle.
+
+        A coarse sweep first, so a candidate that is not a nozzle is rejected
+        in a few frames, then a fine sweep around the coarse peak.
+        """
         cfg = self._cfg
         start = float(cfg["camera_z"])
-        heights = focus.plan_heights(
-            start, float(cfg["focus_span_mm"]), float(cfg["focus_step_mm"]),
-            float(cfg["min_z"]), float(cfg["safe_z"]))
-        samples = []
+        floor, ceiling = float(cfg["min_z"]), float(cfg["safe_z"])
         template = focus.cut(self._frame(), bore_px, int(cfg["focus_template_px"]) // 2)
         where = tuple(bore_px)
-        for z in heights:
-            self._move_z(z)
-            time.sleep(float(cfg["settle_s"]))
-            frame = self._frame()
-            where, confidence = focus.track(frame, template, where)
-            value = focus.sharpness(frame, where, int(cfg["focus_window_px"]))
-            samples.append((z, value))
-            self._progress("focus", "Z%.2f: sharpness %.0f" % (z, value),
-                           z=z, sharpness=value)
-            template = focus.cut(frame, where, int(cfg["focus_template_px"]) // 2)
+        samples = []
+        seen = {}
+
+        def sweep(heights):
+            nonlocal template, where
+            for z in heights:
+                self._move_z(z)
+                time.sleep(float(cfg["settle_s"]))
+                frame = self._frame()
+                where, confidence = focus.track(frame, template, where)
+                value = focus.sharpness(frame, where, int(cfg["focus_window_px"]))
+                samples.append((z, value))
+                self._progress("focus", "Z%.2f: sharpness %.0f" % (z, value), z=z, sharpness=value)
+                template = focus.cut(frame, where, int(cfg["focus_template_px"]) // 2)
+                seen[z] = (template, where)
+
+        coarse = focus.plan_heights(start, float(cfg["focus_span_mm"]), float(cfg["focus_step_mm"]),
+                                    floor, ceiling)
+        sweep(coarse)
         if not focus.is_peaked(samples, float(cfg["focus_peak_ratio"])):
             raise CalibrationError(
                 "the focus did not peak inside Z%.1f to Z%.1f; the camera height "
                 "or the lens has changed more than the sweep covers"
-                % (min(heights), max(heights)))
+                % (min(coarse), max(coarse)))
+        # Restart the tracking from the sharpest coarse frame: a template cut
+        # from the blurred end of the sweep does not match a sharp picture.
+        peak_z = max(samples, key=lambda sample: sample[1])[0]
+        template, where = seen[peak_z]
+        fine = [round(z, 2) for z in focus.plan_heights(
+            peak_z, float(cfg["focus_step_mm"]) / 2.0, float(cfg["focus_fine_step_mm"]), floor, ceiling)]
+        fine = [z for z in fine if all(abs(z - done) > 1e-3 for done, _ in samples)]
+        sweep(sorted(fine, key=lambda z: abs(z - peak_z)))
         best, peak = focus.best_height(samples)
-        best = min(max(best, min(heights)), max(heights))
+        best = min(max(best, min(coarse)), max(coarse))
         self._move_z(best)
         time.sleep(float(cfg["settle_s"]))
         self._progress("focus", "sharpest at Z%.2f" % best, z=best, sharpness=peak)
@@ -420,40 +639,41 @@ class CalibrationRoutine(threading.Thread):
         return self._position(), residual
 
     def _settle_on_active_nozzle(self):
-        """Put the nozzle in view on the target and return its position and focus.
+        """Find the camera, put the nozzle in view on the target, and report.
 
         Returns the machine position, the residual, the focus height and the
         pixel map. A candidate that will not focus, map or centre was not a
         nozzle, and the search moves on to the next.
         """
+        self._retract_to_safe_z()
+        return self._settle_near(self._search_bed())
+
+    def _settle_near(self, span):
+        """Put the nozzle within ``span`` of the current point on the target."""
         cfg = self._cfg
-        for span in (float(cfg["search_span_mm"]), None):
-            if span is None:
-                self._progress("search", "no nozzle near the stored point; searching the whole bed")
-                self._retract_to_safe_z()
-                self._search_bed()
-                span = float(cfg["bed_search_span_mm"])
-            for bore in self._bore_candidates(span):
-                try:
-                    z = self._focus_here(bore)
-                    matrix = self._build_pixel_map()
-                    position, residual = self._centre_bore(matrix, "T0")
-                    return position, residual, z, matrix
-                except NotConverged:
-                    raise
-                except (CalibrationError, focus.FocusError) as exception:
-                    self._progress("search", "that was not a nozzle: %s" % exception)
-                    self._move_z(float(cfg["camera_z"]))
-        raise CalibrationError("no nozzle found anywhere the camera could be")
+        for bore in self._bore_candidates(span):
+            try:
+                z = self._focus_here(bore)
+                matrix = self._build_pixel_map()
+                position, residual = self._centre_bore(matrix, "T0")
+                return position, residual, z, matrix
+            except NotConverged:
+                raise
+            except (CalibrationError, focus.FocusError) as exception:
+                self._progress("search", "that was not a nozzle: %s" % exception)
+                self._move_z(float(cfg["camera_z"]))
+        raise CalibrationError("the toolhead was over the camera but no nozzle bore was found")
 
     # -- main -------------------------------------------------------------
 
     def run(self):
         try:
             try:
+                self._open_stream()
                 self.result = self._execute()
             finally:
                 self._park()
+                self._close_stream()
             self._notify(dict(type="done", result=self.result))
         except Aborted as exception:
             self.error = str(exception)
@@ -493,8 +713,7 @@ class CalibrationRoutine(threading.Thread):
                 "the heights must satisfy floor %.1f < camera %.1f < safe %.1f"
                 % (float(cfg["min_z"]), float(cfg["camera_z"]), float(cfg["safe_z"])))
 
-        frame = vision.average_frames(
-            cfg["snapshot_url"], count=2, timeout=float(cfg["http_timeout"]))
+        frame = self._frame()
         mean, deviation = vision.frame_health(frame)
         self._progress(
             "preflight",
@@ -518,9 +737,6 @@ class CalibrationRoutine(threading.Thread):
             self._bridge.run(["G28"], timeout=float(cfg["home_timeout"]))
 
         self._select_tool(0)
-        self._progress("move", "moving nozzle 0 over the camera")
-        self._go_to_camera(float(cfg["camera_x"]), float(cfg["camera_y"]), float(cfg["camera_z"]))
-
         position_0, residual_0, z, matrix = self._settle_on_active_nozzle()
         self._progress(
             "centre", "nozzle 0 centred at X%.3f Y%.3f" % (position_0[0], position_0[1]))
@@ -544,7 +760,8 @@ class CalibrationRoutine(threading.Thread):
             self._go_to_camera(
                 position_0[0] + float(cfg["nominal_offset_x"]),
                 position_0[1] + float(cfg["nominal_offset_y"]), z)
-            position_0, residual_0, z, matrix = self._settle_on_active_nozzle()
+            self._forget()
+            position_0, residual_0, z, matrix = self._settle_near(float(cfg["bed_search_span_mm"]))
             self._progress(
                 "centre", "nozzle 0 centred at X%.3f Y%.3f" % (position_0[0], position_0[1]))
             self._select_tool(1)

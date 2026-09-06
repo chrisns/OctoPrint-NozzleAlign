@@ -105,6 +105,16 @@ class GcodeBridge(object):
                 with self._receive_lock:
                     self._collecting = False
 
+    def send(self, commands):
+        """Send commands and return at once, without waiting for them to run.
+
+        For a long move that the camera watches while it happens. Follow it
+        with :meth:`run` to wait for the move to finish.
+        """
+        if not self._printer.is_operational():
+            raise RuntimeError("printer is not connected")
+        self._printer.commands(list(commands), tags={"plugin:nozzlealign"})
+
     def position(self, timeout=30.0):
         """Return the current (x, y, z) in machine units."""
         _, position = self._run([], timeout)

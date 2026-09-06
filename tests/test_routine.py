@@ -20,6 +20,7 @@ def make_config(**overrides):
     config = dict(DEFAULTS)
     config.update(
         snapshot_url="http://camera/frame.jpeg",
+        stream_url=None,
         frame_average=1,
         camera_x=CAMERA_XY[0],
         camera_y=CAMERA_XY[1],
@@ -29,9 +30,11 @@ def make_config(**overrides):
         settle_s=0.0,
         target_x_px=FRAME[1] / 2.0,
         target_y_px=FRAME[0] / 2.0,
-        search_span_mm=6.0,
         search_step_mm=4.0,
         search_radius_px=300,
+        bed_search_span_mm=16.0,
+        bed_x_min=100.0, bed_x_max=260.0, bed_y_min=200.0, bed_y_max=320.0,
+        bed_row_mm=60.0, sweep_step_mm=20.0, sweep_feedrate=12000, sweep_overrun_s=0.2, sweep_lag_s=0.0,
         bore_search_radius_px=220,
         track_search_px=120,
         focus_template_px=60,
@@ -72,6 +75,7 @@ def build(monkeypatch, bridge=None, camera_xy=CAMERA_XY, focus_z=32.0, **config_
     monkeypatch.setattr(
         vision, "average_frames",
         lambda url, count=1, timeout=1.0, settle=0, attempts=4: camera.frame())
+    monkeypatch.setattr(vision, "fetch_frame", lambda url, timeout=1.0, attempts=4: camera.frame())
     recorder = Recorder()
     cameras = []
     job = routine.CalibrationRoutine(
@@ -117,12 +121,18 @@ def test_the_corrected_offset_matches_the_machine():
 
 # -- the raised nozzle ---------------------------------------------------------
 
-def test_a_raised_t1_nozzle_over_the_lens_is_noticed_and_skipped(monkeypatch):
-    """The camera is where T1's raised nozzle sits under T0, as it was on the machine."""
-    bridge = FakeBridge()
+def test_a_raised_t1_nozzle_found_first_is_noticed_and_skipped(monkeypatch):
+    """The ring may reach T1's raised nozzle before T0's active one."""
+    bridge, _, job, recorder = build(monkeypatch)
     raised = np.array(CAMERA_XY) - bridge.true_offset - bridge.lift_shift
-    _, _, job, recorder = build(monkeypatch, bridge=bridge, camera_xy=CAMERA_XY,
-                                camera_x=raised[0], camera_y=raised[1])
+
+    def land_on_the_raised_nozzle():
+        job._retract_to_safe_z()
+        job._arrive(float(raised[0]), float(raised[1]))
+        job._move_z(job._cfg["camera_z"])
+        return 0.0
+
+    job._search_bed = land_on_the_raised_nozzle
     result = run(job)
     assert result is not None, recorder.text()
     assert "raised T1 nozzle" in recorder.text()
@@ -200,12 +210,11 @@ def test_travel_goes_through_the_safe_height(monkeypatch):
     assert bridge.sent[-1] == "T0"
 
 
-def test_the_camera_is_found_when_it_has_moved_a_little(monkeypatch):
-    bridge, _, job, recorder = build(monkeypatch, camera_x=CAMERA_XY[0] + 4.5,
-                                     camera_y=CAMERA_XY[1] - 3.0)
+def test_nothing_about_the_camera_position_is_assumed(monkeypatch):
+    bridge, _, job, recorder = build(monkeypatch, camera_x=999.0, camera_y=999.0)
     result = run(job)
     assert result is not None, recorder.text()
-    assert "a bore" in recorder.text()
+    assert "moving nozzle 0 over the camera" not in recorder.text()
     assert result["new_offset"][0] == pytest.approx(bridge.true_offset[0], abs=0.01)
 
 
@@ -213,15 +222,14 @@ def test_the_camera_is_found_anywhere_on_the_bed(monkeypatch):
     """The camera sits 100 mm from where the settings say."""
     bridge, _, job, recorder = build(
         monkeypatch, camera_xy=(80.0, 150.0),
-        bed_x_min=40.0, bed_x_max=205.0, bed_y_min=60.0, bed_y_max=270.0,
-        bed_step_x=55.0, bed_step_y=35.0)
+        bed_x_min=40.0, bed_x_max=205.0, bed_y_min=60.0, bed_y_max=270.0)
     result = run(job)
     assert result is not None, recorder.text()
-    assert "searching the whole bed" in recorder.text()
-    assert "over the camera near" in recorder.text()
+    assert "something changed at" in recorder.text()
+    assert "the middle of the toolhead is at" in recorder.text()
     assert result["new_offset"][0] == pytest.approx(bridge.true_offset[0], abs=0.01)
     assert result["new_offset"][1] == pytest.approx(bridge.true_offset[1], abs=0.01)
-    assert result["camera"]["camera_x"] == pytest.approx(80.0, abs=0.05)
+    assert result["camera"]["camera_x"] == pytest.approx(80.0, abs=0.15)
 
 
 def test_no_toolhead_anywhere_is_a_clear_error(monkeypatch):

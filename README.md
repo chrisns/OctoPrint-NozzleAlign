@@ -14,17 +14,26 @@ Press **Calibrate** on the Nozzle Align tab. The run:
 
 1. Homes, selects T0, and goes to the stored camera point through the safe
    height.
-2. Finds the nozzle bore in the picture. If it is not there, it searches a
-   ring of points around the stored point at the working height. If that
-   fails too, it rises to Z90, where the camera sees 75 by 47 mm, and sweeps
-   the bed in a raster. At each point it nudges X. Only the toolhead moves in
-   the picture, so the share of pixels that change says how much of the
-   toolhead is in view. The weighted middle of the points where that share
-   peaks is the middle of the toolhead. It descends there and searches a
-   wider ring for the bore. The camera can be put anywhere on the bed.
-3. Sweeps Z and settles at the height where the bore is sharpest. The camera
-   mount, the bed and the lift mechanism all move the focal plane by a
-   millimetre or two, so the height is measured, not trusted.
+2. Finds the camera. Nothing is remembered about where it is. At Z90,
+   where the camera sees about 75 by 47 mm, the head searches outward from
+   the middle of the bed in a growing rectangle: each ring scans its two new
+   rows in one continuous X move while the camera watches, and extends every
+   older row by one column each side. Frames are compared with the one
+   before after the lighting is filtered out, and a change only counts when
+   the moved texture forms one large connected patch. The bed and the camera
+   do not move with X, so only the toolhead can do that; its cable chain and
+   its LED beam crossing the lens change scattered pixels, not a patch. A
+   sighting is confirmed with a nudge, the head walks on until the toolhead
+   leaves the picture in X and in Y, takes the middle of each stretch, and
+   climbs to where the most of the toolhead moves with a nudge, which is its
+   middle to a few millimetres. It descends half an offset towards T0's side
+   and searches a 25 mm ring for the bore. The camera can be put anywhere on
+   the bed; one near the middle is found in about 15 seconds.
+3. Sweeps Z and settles at the height where the bore is sharpest, coarse
+   steps first and then fine ones around the peak. The camera mount, the bed
+   and the lift mechanism all move the focal plane by a millimetre or two, so
+   the height is measured, not trusted. A candidate with no focus peak is not
+   a nozzle, and the search moves on to the next.
 4. Builds the pixel map from two probe moves, each reached from the same
    direction so backlash cannot shorten it, and refuses the map if its scale
    or its shape is not plausible.
@@ -120,6 +129,9 @@ running that wizard afterwards overwrites what this plugin stored.
 - The full measurement repeated three times to 1.6 microns in X and 3.0
   microns in Y, before the two-nozzle trap was found. The method was sound;
   the nozzle was wrong.
+- With X25.56 Y0.63 stored, four runs on 2026-09-06, with the camera moved
+  and turned between them, reported T1 landing within 0.01 to 0.03 mm of T0.
+  That is the resolution of the M114 position report.
 - Backlash on reversal is about 0.1 mm. A probe measured straight after a
   reversal gave a 12.6 px/mm map with the two columns 0.98 aligned, which is
   useless. Reaching every measurement from the same direction gave 73 px/mm
@@ -154,6 +166,13 @@ net stop OctoPrint5000 & net start OctoPrint5000
 ```
 
 ## The camera stream
+
+The run reads the MJPEG stream in a background thread and takes the newest
+frame made after each move. A `frame.jpeg` request costs 0.6 to 0.9 seconds
+on this rig and every other one comes back empty, because go2rtc starts the
+camera pipeline for each snapshot consumer and drops it afterwards. Holding
+the stream open gives about 8 frames a second. A full run from homing to
+result takes under 4 minutes; with snapshots it took 20.
 
 `printpc/go2rtc.yaml` and `printpc/nozzlecam.bat` are the working go2rtc
 configuration. Read the comments in the yaml before you change it. Three

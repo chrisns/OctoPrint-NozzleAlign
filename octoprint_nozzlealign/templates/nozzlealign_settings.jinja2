@@ -18,51 +18,53 @@
     </div>
   </div>
 
-  <h4>Where the camera was last time</h4>
+  <h4>Finding the camera</h4>
   <div class="alert">
-    Every run fills these in. They are where the active T0 nozzle sat over the
-    lens and the height at which its bore was sharpest. The next run starts
-    its search there. Edit them only if you have moved the camera further than
-    the search span.
+    Nothing is remembered about where the camera is. Every run sweeps the bed
+    for it. The X and Y below are where the active T0 nozzle last sat over the
+    lens, for information. The Z is where the last focus sweep peaked, and the
+    next one starts there.
   </div>
   <div class="control-group">
-    <label class="control-label">X, Y, Z</label>
+    <label class="control-label">Last found X, Y, Z</label>
     <div class="controls">
-      <input type="number" step="0.01" class="input-small"
+      <input type="number" step="0.01" class="input-small" readonly
              data-bind="value: settings.plugins.nozzlealign.camera_x">
-      <input type="number" step="0.01" class="input-small"
+      <input type="number" step="0.01" class="input-small" readonly
              data-bind="value: settings.plugins.nozzlealign.camera_y">
       <input type="number" step="0.01" class="input-small"
              data-bind="value: settings.plugins.nozzlealign.camera_z">
     </div>
   </div>
   <div class="control-group">
-    <label class="control-label">Search span, step (mm)</label>
+    <label class="control-label">Bed sweep</label>
     <div class="controls">
-      <input type="number" step="1" class="input-small"
-             data-bind="value: settings.plugins.nozzlealign.search_span_mm">
-      <input type="number" step="1" class="input-small"
-             data-bind="value: settings.plugins.nozzlealign.search_step_mm">
+      <input type="number" step="5" class="input-mini"
+             data-bind="value: settings.plugins.nozzlealign.bed_row_mm">
+      <input type="number" step="5" class="input-mini"
+             data-bind="value: settings.plugins.nozzlealign.sweep_step_mm">
+      <input type="number" step="5" class="input-mini"
+             data-bind="value: settings.plugins.nozzlealign.search_z">
+      <input type="number" step="5" class="input-mini"
+             data-bind="value: settings.plugins.nozzlealign.closein_z">
       <span class="help-block">
-        How far around the stored point the run looks for the bore, at the
-        working height.
+        Row spacing in Y, step in X, the sweep height and the close-in
+        height. At Z90 the camera sees about 75 by 47 mm, so rows 50 mm
+        apart cannot miss the toolhead, and the toolhead is wider than the
+        field, which is what the close-in needs.
       </span>
     </div>
   </div>
-
   <div class="control-group">
-    <label class="control-label">Bed search</label>
+    <label class="control-label">Bore ring span, step (mm)</label>
     <div class="controls">
-      <input type="number" step="5" class="input-mini"
-             data-bind="value: settings.plugins.nozzlealign.bed_step_x">
-      <input type="number" step="5" class="input-mini"
-             data-bind="value: settings.plugins.nozzlealign.bed_step_y">
-      <input type="number" step="5" class="input-mini"
-             data-bind="value: settings.plugins.nozzlealign.search_z">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.bed_search_span_mm">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.search_step_mm">
       <span class="help-block">
-        Raster steps in X and Y, and the height, for the sweep of the whole
-        bed when the bore is not near the stored point. At Z90 the camera
-        sees 75 by 47 mm.
+        How far around the middle of the toolhead the run looks for the bore,
+        at the working height.
       </span>
     </div>
   </div>

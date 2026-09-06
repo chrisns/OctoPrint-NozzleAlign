@@ -45,11 +45,13 @@ class FakeBridge(object):
         self.fail_after = fail_after
         self.sent = []
         self.interrupted = False
+        self.flight = None      # (started, duration, start_xy, end_xy) of a move in progress
 
     # -- simulation -------------------------------------------------------
 
     def head_xy(self):
         """Where T0's nozzle is, in the machine frame."""
+        self._advance()
         head = np.array(self.physical[:2], dtype=float)
         if self.tool == 1:
             head = head - np.array(self.stored_offset[:2], dtype=float)
@@ -109,9 +111,44 @@ class FakeBridge(object):
                 target = self.logical[index] + value if self.relative else value
                 self._move_axis(index, target)
 
+    def _advance(self):
+        """Let a move sent with ``send`` progress with the clock."""
+        import time
+
+        if self.flight is None:
+            return
+        started, duration, start, end = self.flight
+        done = min(1.0, (time.time() - started) / duration) if duration > 0 else 1.0
+        self.physical[0] = start[0] + (end[0] - start[0]) * done
+        self.physical[1] = start[1] + (end[1] - start[1]) * done
+        if done >= 1.0:
+            self.flight = None
+
     # -- GcodeBridge surface ---------------------------------------------
 
+    def send(self, commands):
+        """A move that takes real time, so a watcher can see it happen."""
+        import time
+
+        for command in commands:
+            match = MOVE_RE.match(command)
+            feed = re.search(r"F(\d+)", command)
+            if command.startswith("G1") and match and feed and not self.relative:
+                start = list(self.physical[:2])
+                self._apply(command)
+                end = list(self.logical[:2])
+                distance = float(np.hypot(end[0] - start[0], end[1] - start[1]))
+                duration = distance / (float(feed.group(1)) / 60.0)
+                self.physical[0], self.physical[1] = start
+                self.flight = (time.time(), duration, start, end)
+            else:
+                self._apply(command)
+
     def run(self, commands, timeout=60.0):
+        if self.flight is not None:
+            started, duration, start, end = self.flight
+            self.physical[0], self.physical[1] = end
+            self.flight = None
         for command in commands:
             self._apply(command)
         return tuple(self.logical)
@@ -192,9 +229,11 @@ class BoreCamera(object):
         v = np.floor(machine[..., 1] * 1.5).astype(int) % 256
         layer = 130.0 + 16.0 * self.texture[v, u]
         defocus = abs(body_z - self.focus_z) * self.blur_per_mm
+        # the real body keeps visible structure even far from focus, because
+        # its features are millimetres across; cap the blur accordingly
         if defocus > 0.4:
-            size_px = int(min(defocus, 12) * 6) | 1
-            layer = cv2.GaussianBlur(layer.astype(np.float32), (size_px, size_px), min(defocus, 12))
+            size_px = int(min(defocus, 3) * 6) | 1
+            layer = cv2.GaussianBlur(layer.astype(np.float32), (size_px, size_px), min(defocus, 3))
         return np.where(inside, layer, image)
 
     def frame(self):
