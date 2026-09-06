@@ -701,10 +701,11 @@ class CalibrationRoutine(threading.Thread):
             self._notify(dict(type="failed", message="unexpected error: %s" % exception))
 
     def _park(self):
-        """Leave the head high and T0 selected, whatever happened.
+        """Leave the head high, on T0, and homed, whatever happened.
 
         A failed run must not leave the nozzle sitting on the camera, and the
         next run must not start with a tool change at the working height.
+        Homing at the end leaves the machine where a print expects it.
         """
         try:
             if self._bridge.position(timeout=float(self._cfg["move_timeout"])) is None:
@@ -712,6 +713,9 @@ class CalibrationRoutine(threading.Thread):
             self._abort.clear()
             self._retract_to_safe_z()
             self._bridge.run(["T0"], timeout=float(self._cfg["move_timeout"]))
+            if self._cfg.get("home_after"):
+                self._progress("park", "homing")
+                self._bridge.run(["G28"], timeout=float(self._cfg["home_timeout"]))
         except Exception as exception:  # pragma: no cover - best effort
             self._logger.warning("could not park after the run: %s", exception)
 

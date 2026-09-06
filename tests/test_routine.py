@@ -191,8 +191,7 @@ def test_an_abort_parks_high_on_t0(monkeypatch):
     job._build_pixel_map = abort_then_map
     run(job)
     assert recorder.last()["type"] == "aborted"
-    assert bridge.sent[-1] == "T0"
-    assert bridge.logical[2] == pytest.approx(DEFAULTS["safe_z"])
+    assert bridge.sent[-2:] == ["T0", "G28"]      # parked on T0, then homed
 
 
 def test_failure_to_converge_is_an_error_not_an_answer(monkeypatch):
@@ -202,13 +201,20 @@ def test_failure_to_converge_is_an_error_not_an_answer(monkeypatch):
     assert "did not settle" in recorder.last()["message"]
 
 
+def test_the_run_ends_homed_unless_asked_not_to(monkeypatch):
+    bridge, _, job, _ = build(monkeypatch, home_after=False)
+    run(job)
+    assert bridge.sent[-1] == "T0"
+    assert "G28" not in bridge.sent[-1:]
+
+
 def test_travel_goes_through_the_safe_height(monkeypatch):
     bridge, _, job, _ = build(monkeypatch)
     run(job)
     heights = bridge.z_commands()
     assert heights[0] == pytest.approx(DEFAULTS["safe_z"])
     assert heights[-1] == pytest.approx(DEFAULTS["safe_z"])
-    assert bridge.sent[-1] == "T0"
+    assert bridge.sent[-2:] == ["T0", "G28"]      # parked on T0, then homed
 
 
 def test_nothing_about_the_camera_position_is_assumed(monkeypatch):

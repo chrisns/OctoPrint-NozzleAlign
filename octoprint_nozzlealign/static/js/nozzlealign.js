@@ -10,6 +10,9 @@ $(function () {
         self.log = ko.observable("");
         self.result = ko.observable(null);
         self.cameraText = ko.observable("");
+        self.writing = ko.observable(false);
+        self.writeStatus = ko.observable("");
+        self.writeOk = ko.observable(true);
         self.overlayUrl = ko.observable(
             OctoPrint.getBlueprintUrl("nozzlealign") + "overlay.jpg?t=" + Date.now()
         );
@@ -34,6 +37,13 @@ $(function () {
 
         self.append = function (line) {
             self.log(self.log() + line + "\n");
+            // keep the newest line in view, the way a terminal does
+            var pane = document.getElementById("nozzlealign_log");
+            if (pane) {
+                window.setTimeout(function () {
+                    pane.scrollTop = pane.scrollHeight;
+                }, 0);
+            }
         };
 
         function errorText(response) {
@@ -46,6 +56,7 @@ $(function () {
         self.run = function () {
             self.log("");
             self.result(null);
+            self.writeStatus("");
             OctoPrint.simpleApiCommand("nozzlealign", "run", {})
                 .done(function () {
                     self.running(true);
@@ -61,18 +72,39 @@ $(function () {
 
         self.applyNew = function () {
             var pair = self.result().new_offset;
+            self.writing(true);
+            self.writeOk(true);
+            self.writeStatus("writing X" + pair[0].toFixed(2) + " Y" + pair[1].toFixed(2) +
+                             " and reading it back...");
+            self.append("writing X" + pair[0].toFixed(2) + " Y" + pair[1].toFixed(2) + " to the firmware");
             OctoPrint.simpleApiCommand("nozzlealign", "apply", {x: pair[0], y: pair[1]})
                 .done(function (data) {
-                    self.append(
-                        "wrote X" + data.requested[0].toFixed(2) + " Y" + data.requested[1].toFixed(2) +
-                        "; firmware reports " + (data.written
-                            ? "X" + data.written[0].toFixed(2) + " Y" + data.written[1].toFixed(2)
-                            : "nothing") +
-                        (data.verified ? " (verified)" : " (READ BACK DOES NOT MATCH; the previous value was put back)")
-                    );
+                    var stored = data.written
+                        ? "X" + data.written[0].toFixed(2) + " Y" + data.written[1].toFixed(2)
+                        : "nothing";
+                    var message = data.verified
+                        ? "the firmware now stores " + stored + ", read back and verified"
+                        : "the firmware kept " + stored + " instead; the previous value was put back";
+                    self.writeOk(!!data.verified);
+                    self.writeStatus(message);
+                    self.append(message);
+                    if (data.verified && data.written && self.result()) {
+                        // show what the firmware holds now, so a second run
+                        // can be compared against it
+                        var updated = self.result();
+                        updated.stored_offset = data.written;
+                        self.result(null);
+                        self.result(updated);
+                    }
                 })
                 .fail(function (response) {
-                    self.append("apply failed: " + errorText(response));
+                    var message = "the write failed: " + errorText(response);
+                    self.writeOk(false);
+                    self.writeStatus(message);
+                    self.append(message);
+                })
+                .always(function () {
+                    self.writing(false);
                 });
         };
 
@@ -106,7 +138,8 @@ $(function () {
         });
         self.applyLabel = ko.pureComputed(function () {
             var r = self.result();
-            return r ? "Write " + pair(r.new_offset, 2) + " to the firmware" : "";
+            if (!r) return "";
+            return self.writing() ? "Writing..." : "Write " + pair(r.new_offset, 2) + " to the firmware";
         });
 
         function showCamera(camera) {

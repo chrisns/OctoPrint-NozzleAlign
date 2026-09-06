@@ -34,7 +34,7 @@
       </div>
 
       <h5>Progress</h5>
-      <pre class="nozzlealign-log" data-bind="text: log"></pre>
+      <pre id="nozzlealign_log" class="nozzlealign-log" data-bind="text: log"></pre>
 
       <!-- ko if: result -->
       <h5>Result</h5>
@@ -58,8 +58,11 @@
         nozzle 1 landing within a few microns of nozzle 0.
       </p>
       <div class="btn-group">
-        <button class="btn btn-primary" data-bind="click: applyNew, text: applyLabel"></button>
+        <button class="btn btn-primary" data-bind="click: applyNew, text: applyLabel,
+                enable: !writing()"></button>
       </div>
+      <p data-bind="text: writeStatus, visible: writeStatus,
+                    css: {'text-success': writeOk, 'text-error': !writeOk()}"></p>
       <p class="muted">
         Prefer the slicer instead? Put the numbers above into the tool offset
         there and write nothing to the firmware.

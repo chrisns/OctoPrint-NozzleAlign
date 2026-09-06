@@ -8,6 +8,15 @@ The camera is the Printables "XY Nozzle Alignment Camera" (model 1099576), an
 OV9726 module in a printed mount. It streams through go2rtc. See
 `printpc/` for the stream configuration that works.
 
+![A full calibration, from homing to the write](docs/calibration.gif)
+
+One run from scratch, about 30 times faster than real time. The tab is on the
+left and the bed camera is on the right. The run homes, sweeps the bed for the
+camera, closes in on the toolhead, finds the bore, sweeps Z for the sharpest
+picture, centres each nozzle on the same pixel, homes again, and reports that
+nozzle 1 landed 0.01 mm from nozzle 0. The last few seconds are the write to
+the firmware and its read-back.
+
 ## What a run does
 
 Press **Calibrate** on the Nozzle Align tab. The run:
@@ -54,6 +63,9 @@ Both nozzles on one pixel means the image scale and the lens distortion
 cancel. Only the two machine positions matter. The result is what T1 needed
 beyond T0, and the offset that would make that zero. One button writes it,
 reads it back, and reports whether the firmware kept it.
+
+The run ends homed, on T0, at the safe height. A failed or stopped run parks
+the same way.
 
 Every Z command goes through one check against the floor (`min_z`, default
 20 mm) and the safe height. Every travel move and every tool change happens at

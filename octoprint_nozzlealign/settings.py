@@ -24,6 +24,7 @@ DEFAULTS = dict(
     min_z=20.0,
     safe_z=90.0,
     home_first=True,
+    home_after=True,
     # motion
     feedrate=3000,
     fine_feedrate=600,

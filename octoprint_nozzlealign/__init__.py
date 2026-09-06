@@ -32,6 +32,8 @@ class NozzleAlignPlugin(
         self._bridge = None
         self._routine = None
         self._routine_lock = threading.Lock()
+        self._preview_lock = threading.Lock()
+        self._preview_stream = None
         self._last_result = None
 
     # -- SettingsPlugin ---------------------------------------------------
@@ -77,6 +79,10 @@ class NozzleAlignPlugin(
 
     def on_shutdown(self):
         self._stop_routine()
+        with self._preview_lock:
+            if self._preview_stream is not None:
+                self._preview_stream.stop()
+                self._preview_stream = None
 
     # -- EventHandlerPlugin -----------------------------------------------
 
@@ -242,9 +248,13 @@ class NozzleAlignPlugin(
         from . import nozzle
 
         config = self._config()
-        frame = vision.average_frames(
-            config["snapshot_url"], count=2,
-            timeout=min(float(config["http_timeout"]), 5.0), attempts=1)
+        try:
+            frame = self._preview_frame(config)
+        except (vision.CaptureError, OSError, ValueError) as exception:
+            # go2rtc drops the camera pipeline when nothing is watching, and
+            # the first snapshot after that comes back empty. Say so in the
+            # picture rather than showing the browser a broken image.
+            return self._placeholder("waiting for the camera: %s" % exception)
         image = Image.fromarray(frame.clip(0, 255).astype("uint8")).convert("RGB")
         draw = ImageDraw.Draw(image)
         width, height = image.size
@@ -265,6 +275,41 @@ class NozzleAlignPlugin(
         draw.line([(x - 15, y), (x + 15, y)], fill=colour, width=2)
         draw.line([(x, y - 15), (x, y + 15)], fill=colour, width=2)
         draw.text((10, 10), "bore score %.0f" % found["score"], fill=colour)
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=85)
+        response = flask.make_response(buffer.getvalue())
+        response.headers["Content-Type"] = "image/jpeg"
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    def _preview_frame(self, config):
+        """A frame for the preview, from the stream if the snapshot is cold.
+
+        go2rtc starts the camera for each snapshot consumer and drops it
+        afterwards, so a snapshot right after a restart is often empty. The
+        stream wakes the camera and keeps it awake while the tab is open.
+        """
+        try:
+            return vision.average_frames(
+                config["snapshot_url"], count=2,
+                timeout=min(float(config["http_timeout"]), 5.0), attempts=2)
+        except vision.CaptureError:
+            url = config.get("stream_url")
+            if not url:
+                raise
+            with self._preview_lock:
+                if self._preview_stream is None:
+                    self._preview_stream = vision.FrameStream(
+                        url, min(float(config["http_timeout"]), 10.0)).start()
+                stream = self._preview_stream
+            return stream.average(2)
+
+    def _placeholder(self, message):
+        from PIL import Image, ImageDraw
+
+        image = Image.new("RGB", (640, 400), (32, 32, 36))
+        draw = ImageDraw.Draw(image)
+        draw.text((20, 190), message[:110], fill=(230, 200, 90))
         buffer = io.BytesIO()
         image.save(buffer, format="JPEG", quality=85)
         response = flask.make_response(buffer.getvalue())
