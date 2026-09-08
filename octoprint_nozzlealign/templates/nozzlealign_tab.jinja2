@@ -4,6 +4,11 @@
       <div class="nozzlealign-view">
         <img data-bind="attr: {src: overlayUrl}" class="nozzlealign-frame">
       </div>
+      <div class="alert" data-bind="visible: !cameraPresent()">
+        <strong>The nozzle camera is not ready.</strong>
+        <span data-bind="text: cameraMessage"></span>. Plug it in and put it on the
+        bed with the lens up. Nothing here works without it.
+      </div>
       <p class="muted">
         The blue crosshair is the target. The red circle is the nozzle bore
         that the run will steer on. Yellow means the score is too low to use.

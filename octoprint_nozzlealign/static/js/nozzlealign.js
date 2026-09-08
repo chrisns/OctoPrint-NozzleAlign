@@ -17,12 +17,26 @@ $(function () {
         self.isReady = ko.pureComputed(function () {
             return self.printerState.isOperational() && !self.printerState.isPrinting();
         });
+        self.cameraPresent = ko.observable(true);
+        self.cameraMessage = ko.observable("");
         self.readyText = ko.pureComputed(function () {
             if (!self.printerState.isOperational()) return "The printer is not connected.";
             if (self.printerState.isPrinting()) return "The printer is busy.";
             if (!self.canCalibrate()) return "You do not have permission to run this.";
+            // The nozzle camera is usually unplugged between calibrations.
+            if (!self.cameraPresent()) {
+                return "The nozzle camera is not ready: " + self.cameraMessage() + ".";
+            }
             return "";
         });
+        self.checkCamera = function () {
+            OctoPrint.simpleApiGet("nozzlealign").done(function (data) {
+                if (data.camera_present !== undefined) {
+                    self.cameraPresent(!!data.camera_present);
+                    self.cameraMessage(data.camera_message || "");
+                }
+            });
+        };
 
         self.running = ko.observable(false);
         self.live = ko.observable(false);
@@ -193,6 +207,10 @@ $(function () {
         self.onBeforeBinding = function () {
             OctoPrint.simpleApiGet("nozzlealign").done(function (data) {
                 self.running(!!data.running);
+                if (data.camera_present !== undefined) {
+                    self.cameraPresent(!!data.camera_present);
+                    self.cameraMessage(data.camera_message || "");
+                }
                 if (data.result) {
                     self.result(data.result);
                     if (data.result.camera) showCamera(data.result.camera);
@@ -201,6 +219,7 @@ $(function () {
         };
 
         self.onTabChange = function (current) {
+            if (current === "#tab_plugin_nozzlealign") self.checkCamera();
             if (current !== "#tab_plugin_nozzlealign" && self.live()) {
                 self.toggleLive();
             }

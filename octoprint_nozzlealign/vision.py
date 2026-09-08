@@ -21,6 +21,16 @@ class CaptureError(Exception):
     """The camera did not give us a usable frame."""
 
 
+class CameraMissing(CaptureError):
+    """The camera is not plugged in.
+
+    go2rtc answers a missing device with 200 and an empty body, which reads like
+    success. Telling that apart from a broken stream is worth doing, because the
+    nozzle camera is often unplugged between calibrations and the operator should be
+    told to plug it in rather than sent to debug go2rtc.
+    """
+
+
 class DetectionError(Exception):
     """No nozzle was found in the frame."""
 
@@ -29,9 +39,11 @@ def fetch_frame(url, timeout=10.0, attempts=4, retry_delay=1.0):
     """Fetch one JPEG frame and return it as a float32 greyscale array.
 
     go2rtc stops the camera process while nothing is watching, and the first
-    request after that answers 200 with an empty body while ffmpeg starts.  The
-    retry covers that cold start.
+    request after that answers 200 with an empty body while ffmpeg starts. The
+    retry covers that cold start. An empty body every time means the device is not
+    there at all, which is a different problem and gets a different message.
     """
+    empty = 0
     last = 0
     for attempt in range(attempts):
         response = requests.get(url, timeout=timeout)
@@ -40,12 +52,37 @@ def fetch_frame(url, timeout=10.0, attempts=4, retry_delay=1.0):
         if last >= 1000:
             image = Image.open(io.BytesIO(response.content)).convert("L")
             return np.asarray(image, dtype=np.float32)
+        if last == 0:
+            empty += 1
         if attempt < attempts - 1:
             time.sleep(retry_delay)
+    if empty == attempts:
+        raise CameraMissing(
+            "the camera gave nothing at all after %d tries. It is almost certainly "
+            "not plugged in. Plug it in, then try again." % attempts)
     raise CaptureError(
         "the camera returned %d bytes after %d attempts; check the go2rtc "
         "stream at %s" % (last, attempts, url)
     )
+
+
+def camera_present(url, timeout=4.0):
+    """Is a camera answering with a real picture? Returns (present, why_not).
+
+    One quick try, so the interface can say whether the camera is there without
+    making the operator wait through the retries a real capture uses.
+    """
+    try:
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+    except requests.RequestException as exception:
+        return False, "the camera URL did not answer: %s" % exception
+    size = len(response.content)
+    if size == 0:
+        return False, "the camera is not plugged in"
+    if size < 1000:
+        return False, "the camera answered with %d bytes, which is not a picture" % size
+    return True, ""
 
 
 class FrameStream(object):

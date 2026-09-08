@@ -109,6 +109,17 @@ class NozzleAlignPlugin(
                                  exception)
             raise ValueError(str(exception))
 
+    def _camera_state(self, config=None):
+        """Is the nozzle camera plugged in? Returns (present, why_not)."""
+        config = config or self._config()
+        url = config.get("snapshot_url") or ""
+        if not url:
+            return False, "no camera URL is set"
+        try:
+            return vision.camera_present(url, timeout=float(config["http_timeout"]) / 4.0)
+        except Exception as exception:                       # noqa: BLE001
+            return False, "the camera could not be reached: %s" % exception
+
     def _profile(self):
         """The printer profile OctoPrint holds, or None."""
         try:
@@ -247,7 +258,13 @@ class NozzleAlignPlugin(
     def on_api_get(self, request):
         if not self._allowed("VIEW"):
             return flask.abort(403)
-        return flask.jsonify(running=self._routine_running(), result=self._last_result)
+        present, why = self._camera_state()
+        return flask.jsonify(
+            camera_present=present,
+            camera_message=why,
+            running=self._routine_running(),
+            result=self._last_result,
+        )
 
     def _api_run(self, data):
         with self._routine_lock:
@@ -266,6 +283,13 @@ class NozzleAlignPlugin(
                 validate_heights(config)
             except SettingsError as exception:
                 raise ValueError(str(exception))
+            # Check the camera before homing rather than after. The nozzle camera is
+            # usually unplugged between calibrations, and a run that homes, sweeps the
+            # bed and only then finds no picture wastes several minutes.
+            present, why = self._camera_state(config)
+            if not present:
+                raise ValueError("%s. The run needs the nozzle camera on the bed, "
+                                 "lens up." % why)
             self._last_result = None
             self._routine = _ResultKeepingRoutine(
                 self, self._bridge, config, self._notify, self._logger)
@@ -342,8 +366,16 @@ class NozzleAlignPlugin(
         from . import nozzle
 
         config = self._config()
+        # One quick check first. The nozzle camera is usually unplugged between
+        # calibrations, and without this the preview sits through every retry
+        # before admitting it, which takes about twenty seconds each time.
+        present, why = self._camera_state(config)
+        if not present:
+            return self._placeholder(why)
         try:
             frame = self._preview_frame(config)
+        except vision.CameraMissing as exception:
+            return self._placeholder(str(exception))
         except (vision.CaptureError, OSError, ValueError) as exception:
             # go2rtc drops the camera pipeline when nothing is watching, and
             # the first snapshot after that comes back empty. Say so in the
