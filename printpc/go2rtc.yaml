@@ -29,3 +29,13 @@ ffmpeg:
 streams:
   bed_cam: "ffmpeg:device?video=16MP USB Camera&video_size=1280x720"
   nozzle_cam: "exec:cmd /c C:/OctoPrint/nozzlecam.bat"
+
+# Anything outside this machine must use the host name, not 127.0.0.1. OctoPrint's
+# snapshot URL is read by Home Assistant, and 127.0.0.1 there means Home Assistant's
+# own machine, so the picture never arrives.
+#
+# The Home Assistant OctoPrint integration builds its snapshot URL by appending
+# "&action=snapshot" to the stream URL. That is the mjpg-streamer convention. go2rtc
+# answers it with an endless MJPEG stream rather than one frame, so that camera can
+# stream but cannot make a thumbnail. A plain MJPEG camera in Home Assistant, pointed
+# straight at stream.mjpeg, does both.
