@@ -40,27 +40,6 @@ def build_pixel_map(origin_px, x_move_px, y_move_px, distance_mm):
     return matrix
 
 
-def build_pixel_map_from_shifts(shift_x, shift_y, distance_mm):
-    """Return the 2x2 matrix of pixels per millimetre from two measured shifts.
-
-    ``shift_x`` is the image displacement caused by moving ``distance_mm`` along
-    machine X, and ``shift_y`` the same for machine Y.
-    """
-    if distance_mm == 0:
-        raise GeometryError("probe distance must not be zero")
-    column_x = np.asarray(shift_x, dtype=float) / float(distance_mm)
-    column_y = np.asarray(shift_y, dtype=float) / float(distance_mm)
-    matrix = np.column_stack([column_x, column_y])
-    determinant = float(np.linalg.det(matrix))
-    if abs(determinant) < 1e-6:
-        raise GeometryError(
-            "the two probe moves are not independent (determinant %.3g); "
-            "check that the nozzle is visible and that detection is stable"
-            % determinant
-        )
-    return matrix
-
-
 def pixels_per_mm(matrix):
     """Average pixel scale, useful for reporting and for sanity limits."""
     matrix = np.asarray(matrix, dtype=float)

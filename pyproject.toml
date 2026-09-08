@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "OctoPrint"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "OctoPrint-NozzleAlign"
+version = "0.1.0"
+description = "Measures the XY offset between two nozzles with a camera on the bed, and writes it to the firmware."
+readme = "README.md"
+requires-python = ">=3.7,<4"
+license = { text = "MIT" }
+authors = [{ name = "Chris Nesbitt-Smith", email = "chris@cns.me.uk" }]
+keywords = ["octoprint", "plugin", "nozzle", "calibration", "camera", "dual extruder"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: OctoPrint",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Printing",
+]
+dependencies = ["numpy>=1.21", "opencv-python-headless>=4.5", "requests", "Pillow"]
+
+[project.urls]
+Homepage = "https://github.com/chrisns/OctoPrint-NozzleAlign"
+Source = "https://github.com/chrisns/OctoPrint-NozzleAlign"
+Issues = "https://github.com/chrisns/OctoPrint-NozzleAlign/issues"
+
+[project.entry-points."octoprint.plugin"]
+nozzlealign = "octoprint_nozzlealign"
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.packages.find]
+include = ["octoprint_nozzlealign", "octoprint_nozzlealign.*"]
+
+[tool.setuptools.package-data]
+octoprint_nozzlealign = ["templates/*", "static/**/*"]

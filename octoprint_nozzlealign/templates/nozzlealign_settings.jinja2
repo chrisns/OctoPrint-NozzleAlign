@@ -202,4 +202,364 @@
              data-bind="checked: settings.plugins.nozzlealign.save_to_eeprom">
     </div>
   </div>
+
+  <h4>Camera</h4>
+  <div class="control-group">
+    <label class="control-label">Stream URL</label>
+    <div class="controls">
+      <input type="text" class="input-xxlarge"
+             data-bind="value: settings.plugins.nozzlealign.stream_url">
+      <span class="help-block">An MJPEG stream. The plugin reads about 8 frames a second from it, against one every 0.6 to 0.9 seconds from single snapshots, so a run is far quicker with one. Leave it empty to use snapshots only.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Camera timeout, seconds</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.http_timeout">
+      <span class="help-block">How long to wait for a frame before giving up.</span>
+    </div>
+  </div>
+
+  <h4>Movement</h4>
+  <div class="control-group">
+    <div class="controls">
+      <label class="checkbox">
+        <input type="checkbox"
+               data-bind="checked: settings.plugins.nozzlealign.home_after">
+        Home the printer when a run finishes
+      </label>
+      <span class="help-block">Leaves the machine in a known place.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Travel feedrate, mm/min</label>
+    <div class="controls">
+      <input type="number" step="100" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.feedrate">
+      <span class="help-block">For the long moves between positions.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Fine feedrate, mm/min</label>
+    <div class="controls">
+      <input type="number" step="50" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.fine_feedrate">
+      <span class="help-block">For the small corrections that centre a nozzle on the lens.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Z feedrate, mm/min</label>
+    <div class="controls">
+      <input type="number" step="50" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.z_feedrate">
+      <span class="help-block">Every descent towards the camera uses this.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Move timeout, seconds</label>
+    <div class="controls">
+      <input type="number" step="5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.move_timeout">
+      <span class="help-block">A move that has not finished in this long is treated as a failure.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Homing timeout, seconds</label>
+    <div class="controls">
+      <input type="number" step="10" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.home_timeout">
+      <span class="help-block">Homing is slower than a move, so it has its own limit.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Wait after a tool change, seconds</label>
+    <div class="controls">
+      <input type="number" step="0.5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.tool_settle_s">
+      <span class="help-block">The toolhead lifts and drops a nozzle on a tool change. Let it finish.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Wait after a move, seconds</label>
+    <div class="controls">
+      <input type="number" step="0.1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.settle_s">
+      <span class="help-block">Let the frame stop shaking before a picture is taken.</span>
+    </div>
+  </div>
+
+  <h4>Where to search for the camera</h4>
+  <div class="alert alert-error">
+    <strong>These four go straight into G1 moves.</strong> A value past your real
+    bed drives the toolhead into the frame. They are checked against your printer
+    profile when you save and again when you press Calibrate, and a run is refused
+    if they do not fit. Keep a margin: the toolhead is wider than the nozzle.
+  </div>
+  <div class="control-group">
+    <label class="control-label">X from, millimetres</label>
+    <div class="controls">
+      <input type="number" step="5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.bed_x_min">
+      <span class="help-block">The area swept while looking for the camera.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">X to, millimetres</label>
+    <div class="controls">
+      <input type="number" step="5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.bed_x_max">
+      <span class="help-block">The area swept while looking for the camera.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Y from, millimetres</label>
+    <div class="controls">
+      <input type="number" step="5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.bed_y_min">
+      <span class="help-block">The area swept while looking for the camera.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Y to, millimetres</label>
+    <div class="controls">
+      <input type="number" step="5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.bed_y_max">
+      <span class="help-block">The area swept while looking for the camera.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Sweep feedrate, mm/min</label>
+    <div class="controls">
+      <input type="number" step="100" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.sweep_feedrate">
+      <span class="help-block">The search watches the camera during one continuous move at this speed.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Sweep overrun, seconds</label>
+    <div class="controls">
+      <input type="number" step="0.5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.sweep_overrun_s">
+      <span class="help-block">Extra time allowed past the calculated end of a sweep.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Sweep lag, seconds</label>
+    <div class="controls">
+      <input type="number" step="0.1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.sweep_lag_s">
+      <span class="help-block">How far the picture trails the move, used to place a sighting.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">First search radius, pixels</label>
+    <div class="controls">
+      <input type="number" step="10" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.search_radius_px">
+      <span class="help-block">How far from the centre of the frame the first bore may be.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Movement threshold</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.motion_threshold">
+      <span class="help-block">How much a pixel must change to count as moved. Raise it if the lighting flickers.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Smallest moved patch</label>
+    <div class="controls">
+      <input type="number" step="0.05" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.motion_min_blob">
+      <span class="help-block">A sighting must be one connected patch at least this fraction of all the movement. It rejects the LED beam and the cable chain.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Nudge, millimetres</label>
+    <div class="controls">
+      <input type="number" step="0.5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.motion_nudge_mm">
+      <span class="help-block">The small move used to tell the toolhead from the background.</span>
+    </div>
+  </div>
+
+  <h4>Closing in on the camera</h4>
+  <div class="control-group">
+    <label class="control-label">Most steps</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.closein_max_steps">
+      <span class="help-block">Give up after this many.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Smallest usable scale, px/mm</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.closein_min_scale">
+      <span class="help-block">Below this the picture is too coarse to steer by.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Smallest usable response</label>
+    <div class="controls">
+      <input type="number" step="0.05" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.closein_min_response">
+      <span class="help-block">How much the picture must answer a move for the step to be trusted.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Close enough, millimetres</label>
+    <div class="controls">
+      <input type="number" step="0.5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.closein_done_mm">
+      <span class="help-block">Stop closing in once the camera is within this.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Largest single step, millimetres</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.closein_max_move_mm">
+      <span class="help-block">A cap on any one correction, so a bad reading cannot fling the toolhead.</span>
+    </div>
+  </div>
+
+  <h4>Focus</h4>
+  <div class="control-group">
+    <label class="control-label">Fine step, millimetres</label>
+    <div class="controls">
+      <input type="number" step="0.1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.focus_fine_step_mm">
+      <span class="help-block">The second, closer sweep uses this step.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Template size, pixels</label>
+    <div class="controls">
+      <input type="number" step="2" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.focus_template_px">
+      <span class="help-block">The patch cut out to follow the bore between heights.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Sharpness window, pixels</label>
+    <div class="controls">
+      <input type="number" step="2" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.focus_window_px">
+      <span class="help-block">The area measured for sharpness at each height.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Peak ratio</label>
+    <div class="controls">
+      <input type="number" step="0.05" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.focus_peak_ratio">
+      <span class="help-block">The sweep has to fall to this fraction of its best on both sides, or the focus is not inside the sweep and the run stops.</span>
+    </div>
+  </div>
+
+  <h4>Finding the bore</h4>
+  <div class="control-group">
+    <label class="control-label">Search radius, pixels</label>
+    <div class="controls">
+      <input type="number" step="5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.bore_search_radius_px">
+      <span class="help-block">How far from the expected place to look.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Tracking radius, pixels</label>
+    <div class="controls">
+      <input type="number" step="5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.track_search_px">
+      <span class="help-block">How far the bore may move between frames and still be followed.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Refine radius, pixels</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.track_lock_px">
+      <span class="help-block">How close to the tracked place the detector is allowed to settle.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Tracking confidence</label>
+    <div class="controls">
+      <input type="number" step="0.05" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.track_min_match">
+      <span class="help-block">Below this the template has lost the bore and the detector starts again.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Target X, pixels</label>
+    <div class="controls">
+      <input type="number" step="10" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.target_x_px">
+      <span class="help-block">The point in the frame each nozzle is driven onto. The centre by default.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Target Y, pixels</label>
+    <div class="controls">
+      <input type="number" step="10" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.target_y_px">
+      <span class="help-block">As above, for Y.</span>
+    </div>
+  </div>
+
+  <h4>The pixel to millimetre map</h4>
+  <div class="control-group">
+    <label class="control-label">Attempts</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.map_attempts">
+      <span class="help-block">How many times to rebuild a map that does not pass its checks.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Smallest scale, px/mm</label>
+    <div class="controls">
+      <input type="number" step="5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.map_min_scale">
+      <span class="help-block">A map outside the scale band is rejected as untrustworthy.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Largest scale, px/mm</label>
+    <div class="controls">
+      <input type="number" step="5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.map_max_scale">
+      <span class="help-block">As above.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Largest column skew</label>
+    <div class="controls">
+      <input type="number" step="0.05" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.map_max_cos">
+      <span class="help-block">How far from square the two measured directions may be. Near zero is square.</span>
+    </div>
+  </div>
+
+  <h4>Limits</h4>
+  <div class="control-group">
+    <label class="control-label">Largest correction, millimetres</label>
+    <div class="controls">
+      <input type="number" step="0.5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.max_correction_mm">
+      <span class="help-block">A measurement asking for more than this is refused rather than obeyed.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Raised nozzle check, millimetres</label>
+    <div class="controls">
+      <input type="number" step="0.5" class="input-small"
+             data-bind="value: settings.plugins.nozzlealign.active_check_mm">
+      <span class="help-block">After a tool change the bore has to appear within this of the target, or the nozzle over the lens was the raised one and the run moves across.</span>
+    </div>
+  </div>
 </form>

@@ -8,11 +8,15 @@ import threading
 
 import flask
 import octoprint.plugin
+from flask_babel import gettext
+from octoprint.access import ADMIN_GROUP, USER_GROUP
+from octoprint.access.permissions import Permissions
 
 from . import routine, vision
 from .gcode import (GcodeBridge, format_offset_command, read_back_matches,
                     within_toolhead_band)
-from .settings import DEFAULTS
+from .settings import (DEFAULTS, SettingsError, validate_bed,
+                       validate_heights)
 
 __plugin_name__ = "XY Nozzle Alignment"
 __plugin_pythoncompat__ = ">=3.7,<4"
@@ -38,11 +42,79 @@ class NozzleAlignPlugin(
 
     # -- SettingsPlugin ---------------------------------------------------
 
+    # -- permissions ------------------------------------------------------
+
+    def get_additional_permissions(self):
+        """Two permissions, split by what the action can do to the machine.
+
+        Watching the camera is harmless. Running the routine drives the toolhead
+        down towards a camera on the bed, and writing the offset changes the
+        firmware, so both are kept to administrators.
+        """
+        return [
+            {
+                "key": "VIEW",
+                "name": "View the nozzle camera",
+                "description": gettext("Allows viewing the nozzle camera and the "
+                                       "last measurement."),
+                "default_groups": [USER_GROUP, ADMIN_GROUP],
+                "roles": ["view"],
+            },
+            {
+                "key": "CALIBRATE",
+                "name": "Run the nozzle alignment",
+                "description": gettext(
+                    "Allows moving the toolhead over the camera to measure the "
+                    "offset, and writing that offset to the printer firmware."
+                ),
+                "default_groups": [ADMIN_GROUP],
+                "roles": ["calibrate"],
+            },
+        ]
+
+    # Which permission each API command needs. A command missing from here is
+    # refused, so a new command cannot be added without deciding who may run it.
+    COMMAND_PERMISSIONS = {
+        "run": "CALIBRATE",
+        "abort": "VIEW",
+        "apply": "CALIBRATE",
+        "read_offset": "VIEW",
+    }
+
+    @staticmethod
+    def _allowed(key):
+        return getattr(Permissions, "PLUGIN_NOZZLEALIGN_" + key).can()
+
+    # -- settings ---------------------------------------------------------
+
     def get_settings_defaults(self):
         return dict(DEFAULTS)
 
     def get_settings_version(self):
         return 2
+
+    def on_settings_save(self, data):
+        """Check the search area and the heights before they are saved.
+
+        The bed numbers go straight into G1 moves and the Z numbers decide how close
+        the nozzle comes to the camera, so neither is taken on trust.
+        """
+        octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
+        try:
+            config = self._config()
+            validate_bed(config, self._profile())
+            validate_heights(config)
+        except SettingsError as exception:
+            self._logger.warning("these settings would not be safe to run: %s",
+                                 exception)
+            raise ValueError(str(exception))
+
+    def _profile(self):
+        """The printer profile OctoPrint holds, or None."""
+        try:
+            return self._printer_profile_manager.get_current_or_default()
+        except Exception:                                    # noqa: BLE001
+            return None
 
     def on_settings_migrate(self, target, current):
         # Version 1 stored the raised T1 nozzle's position as the camera
@@ -62,8 +134,13 @@ class NozzleAlignPlugin(
         return [
             dict(type="tab", name="Nozzle Align", template="nozzlealign_tab.jinja2",
                  custom_bindings=True),
+            # False on purpose. The settings pane binds straight through
+            # OctoPrint's own settings view model, so
+            # `settings.plugins.nozzlealign.<key>` resolves. With custom bindings
+            # on, nothing owns the pane and every binding fails silently, which
+            # leaves the page blank.
             dict(type="settings", name="Nozzle Align",
-                 template="nozzlealign_settings.jinja2", custom_bindings=True),
+                 template="nozzlealign_settings.jinja2", custom_bindings=False),
         ]
 
     # -- AssetPlugin ------------------------------------------------------
@@ -149,6 +226,11 @@ class NozzleAlignPlugin(
         return dict(run=[], abort=[], apply=["x", "y"], read_offset=[])
 
     def on_api_command(self, command, data):
+        needed = self.COMMAND_PERMISSIONS.get(command)
+        if needed is None:
+            return flask.abort(400, "unknown command")
+        if not self._allowed(needed):
+            return flask.abort(403, "you do not have permission to do that")
         try:
             handler = getattr(self, "_api_" + command)
         except AttributeError:
@@ -163,6 +245,8 @@ class NozzleAlignPlugin(
         return flask.jsonify(result or dict(ok=True))
 
     def on_api_get(self, request):
+        if not self._allowed("VIEW"):
+            return flask.abort(403)
         return flask.jsonify(running=self._routine_running(), result=self._last_result)
 
     def _api_run(self, data):
@@ -173,9 +257,18 @@ class NozzleAlignPlugin(
                 raise ValueError("the printer is not connected")
             if self._printer.is_printing():
                 raise ValueError("the printer is busy")
+            # Checked here as well as on save, because a printer profile can change
+            # after a save, and because a value written straight into config.yaml
+            # never went through one.
+            config = self._config()
+            try:
+                validate_bed(config, self._profile())
+                validate_heights(config)
+            except SettingsError as exception:
+                raise ValueError(str(exception))
             self._last_result = None
             self._routine = _ResultKeepingRoutine(
-                self, self._bridge, self._config(), self._notify, self._logger)
+                self, self._bridge, config, self._notify, self._logger)
             self._routine.start()
         return dict(started=True)
 
@@ -237,6 +330,7 @@ class NozzleAlignPlugin(
     # -- BlueprintPlugin --------------------------------------------------
 
     @octoprint.plugin.BlueprintPlugin.route("/overlay.jpg", methods=["GET"])
+    @Permissions.PLUGIN_NOZZLEALIGN_VIEW.require(403)
     def overlay(self):
         """The camera view with the target and the detected bore drawn on it.
 
@@ -317,6 +411,9 @@ class NozzleAlignPlugin(
         response.headers["Cache-Control"] = "no-store"
         return response
 
+    def is_blueprint_protected(self):
+        return True
+
     def is_blueprint_csrf_protected(self):
         return True
 
@@ -360,4 +457,6 @@ def __plugin_load__():
             __plugin_implementation__.gcode_received,
         "octoprint.plugin.softwareupdate.check_config":
             __plugin_implementation__.get_update_information,
+        "octoprint.access.permissions":
+            __plugin_implementation__.get_additional_permissions,
     }

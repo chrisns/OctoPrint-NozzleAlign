@@ -6,6 +6,79 @@ without OctoPrint installed, and so a setting cannot be read by the routine
 without being declared here.
 """
 
+class SettingsError(ValueError):
+    """A setting was rejected before it could reach the machine."""
+
+
+def validate_bed(config, profile=None):
+    """Check the search area against the printer profile before any move.
+
+    These four numbers go straight into G1 moves. A value past the real bed drives
+    the toolhead into the frame, so they are checked against the profile OctoPrint
+    already holds rather than trusted.
+
+    `profile` is OctoPrint's printer profile dict. Without one only the internal
+    consistency is checked.
+    """
+    box = {}
+    for key in ("bed_x_min", "bed_x_max", "bed_y_min", "bed_y_max"):
+        try:
+            box[key] = float(config[key])
+        except (KeyError, TypeError, ValueError):
+            raise SettingsError("%s is not a number" % key)
+
+    for axis in ("x", "y"):
+        low, high = box["bed_%s_min" % axis], box["bed_%s_max" % axis]
+        if low >= high:
+            raise SettingsError(
+                "bed_%s_min is %.1f and bed_%s_max is %.1f. The minimum has to be "
+                "the smaller one." % (axis, low, axis, high))
+
+    if not profile:
+        return box
+
+    volume = profile.get("volume") or {}
+    origin_centre = volume.get("origin") == "center"
+    limits = {}
+    for axis in ("x", "y"):
+        try:
+            size = float(volume[axis])
+        except (KeyError, TypeError, ValueError):
+            continue
+        limits[axis] = (-size / 2.0, size / 2.0) if origin_centre else (0.0, size)
+
+    for axis, (low, high) in limits.items():
+        for edge in ("min", "max"):
+            key = "bed_%s_%s" % (axis, edge)
+            value = box[key]
+            if not low <= value <= high:
+                raise SettingsError(
+                    "%s is %.1f, and your printer profile says the %s axis runs from "
+                    "%.1f to %.1f. Correct one of the two before you run this."
+                    % (key, value, axis.upper(), low, high))
+    return box
+
+
+def validate_heights(config):
+    """Check the Z limits. Below the floor the nozzle hits the camera."""
+    try:
+        floor = float(config["min_z"])
+        ceiling = float(config["safe_z"])
+        camera = float(config["camera_z"])
+    except (KeyError, TypeError, ValueError):
+        raise SettingsError("min_z, safe_z and camera_z all have to be numbers")
+    if floor <= 0:
+        raise SettingsError("min_z is %.1f. It is the floor no move may cross, and "
+                            "it has to be above the lens." % floor)
+    if ceiling <= floor:
+        raise SettingsError("safe_z is %.1f and min_z is %.1f. The safe height has "
+                            "to be the higher one." % (ceiling, floor))
+    if not floor <= camera <= ceiling:
+        raise SettingsError("camera_z is %.1f, which is outside the %.1f to %.1f band "
+                            "that min_z and safe_z allow." % (camera, floor, ceiling))
+    return floor, ceiling, camera
+
+
 DEFAULTS = dict(
     # camera
     snapshot_url="http://127.0.0.1:1984/api/frame.jpeg?src=nozzle_cam",
@@ -58,7 +131,6 @@ DEFAULTS = dict(
     closein_max_move_mm=40.0,
     motion_nudge_mm=4.0,
     motion_threshold=8.0,
-    motion_min_fraction=0.03,
     motion_min_blob=0.2,
     bed_search_span_mm=25.0,
     search_step_mm=7.0,

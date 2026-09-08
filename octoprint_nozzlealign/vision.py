@@ -178,20 +178,6 @@ def _texture(frame, sigma=25.0):
     return image - cv2.GaussianBlur(image, (size, size), sigma)
 
 
-def motion_fraction(before, after, threshold=12.0):
-    """The fraction of the frame whose texture moved between two frames.
-
-    X moves the toolhead and nothing else the camera can see, so a nudge in
-    X changes the picture only where the toolhead is. The toolhead's light
-    moves too, though, and when its beam edge crosses the lens the whole
-    frame brightens or darkens without anything in it moving. Comparing
-    high-pass filtered frames ignores that and keeps only texture that
-    shifted.
-    """
-    difference = np.abs(_texture(after) - _texture(before))
-    return float((difference > float(threshold)).mean())
-
-
 def motion_blob(before, after, threshold=12.0):
     """The fraction of the frame covered by the largest patch of moved texture.
 
@@ -247,17 +233,3 @@ def shift_in_box(before, after, box):
     return (float(dx), float(dy)), float(response)
 
 
-def shift_between(before, after):
-    """How far the picture moved between two frames, in pixels, by phase correlation.
-
-    The peak belongs to whatever covers most of the frame. Over the camera
-    that is the toolhead, so this measures the toolhead's shift even though
-    a Y move shifts the background too.
-    """
-    import cv2
-
-    a = np.asarray(before, dtype=np.float32)
-    b = np.asarray(after, dtype=np.float32)
-    window = cv2.createHanningWindow((a.shape[1], a.shape[0]), cv2.CV_32F)
-    (dx, dy), response = cv2.phaseCorrelate(a - a.mean(), b - b.mean(), window)
-    return (float(dx), float(dy)), float(response)

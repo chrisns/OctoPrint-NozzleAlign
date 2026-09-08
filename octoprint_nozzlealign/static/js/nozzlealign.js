@@ -4,6 +4,25 @@ $(function () {
 
         self.settingsViewModel = parameters[0];
         self.loginState = parameters[1];
+        self.access = parameters[2];
+        self.printerState = parameters[3];
+
+        // The buttons that move the toolhead need the CALIBRATE permission. The
+        // server refuses without it either way; hiding them keeps the interface
+        // honest about what this user may do.
+        self.canCalibrate = ko.pureComputed(function () {
+            return self.loginState.hasPermission(
+                self.access.permissions.PLUGIN_NOZZLEALIGN_CALIBRATE);
+        });
+        self.isReady = ko.pureComputed(function () {
+            return self.printerState.isOperational() && !self.printerState.isPrinting();
+        });
+        self.readyText = ko.pureComputed(function () {
+            if (!self.printerState.isOperational()) return "The printer is not connected.";
+            if (self.printerState.isPrinting()) return "The printer is busy.";
+            if (!self.canCalibrate()) return "You do not have permission to run this.";
+            return "";
+        });
 
         self.running = ko.observable(false);
         self.live = ko.observable(false);
@@ -190,7 +209,8 @@ $(function () {
 
     OCTOPRINT_VIEWMODELS.push({
         construct: NozzleAlignViewModel,
-        dependencies: ["settingsViewModel", "loginStateViewModel"],
+        dependencies: ["settingsViewModel", "loginStateViewModel",
+                       "accessViewModel", "printerStateViewModel"],
         elements: ["#nozzlealign_tab"]
     });
 });

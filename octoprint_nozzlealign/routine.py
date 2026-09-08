@@ -35,7 +35,7 @@ import time
 
 import numpy as np
 
-from . import focus, geometry, nozzle, vision
+from . import focus, geometry, nozzle, search, vision
 from .gcode import Timeout, format_offset_command
 
 
@@ -49,6 +49,50 @@ class CalibrationError(Exception):
 
 class NotConverged(CalibrationError):
     """A real nozzle was centred but never settled within the tolerance."""
+
+
+class _SearchMachine(object):
+    """The moves and pictures `search.BedSearch` is allowed to ask for.
+
+    Naming them here keeps the search from reaching into the routine, and lets the
+    tests drive the search with a fake that has no printer behind it.
+    """
+
+    def __init__(self, routine):
+        self._routine = routine
+
+    def check_abort(self):
+        self._routine._check_abort()
+
+    def move_absolute(self, x=None, y=None, feedrate=None):
+        self._routine._move_absolute(x=x, y=y, feedrate=feedrate)
+
+    def move_relative(self, dx=0.0, dy=0.0):
+        self._routine._move_relative(dx=dx, dy=dy)
+
+    def move_z(self, z):
+        self._routine._move_z(z)
+
+    def frame_quick(self):
+        return self._routine._frame_quick()
+
+    def frame_now(self):
+        return self._routine._frame_now()
+
+    def send(self, commands):
+        self._routine._bridge.send(commands)
+
+    def wait(self):
+        self._routine._bridge.run([], timeout=float(self._routine._cfg["move_timeout"]))
+
+    def moved_fraction_after_nudge(self):
+        return self._routine._moved_fraction_after_nudge()
+
+    def arrive(self, x, y):
+        self._routine._arrive(x, y)
+
+    def forget(self):
+        self._routine._forget()
 
 
 class CalibrationRoutine(threading.Thread):
@@ -264,239 +308,15 @@ class CalibrationRoutine(threading.Thread):
     def _search_bed(self):
         """Find the camera anywhere on the bed, then descend onto it.
 
-        Nothing is assumed about where the camera is. At Z90, where the
-        camera sees about 75 by 47 mm, the head sweeps X back and forth in
-        steps, one row of Y at a time, and each frame is compared with the
-        one before. The bed and the camera do not move with X, so only the
-        toolhead can change the texture in the picture. A sighting is
-        confirmed with a nudge, which must move one large connected patch of
-        texture: the toolhead's cable chain and the flicker of its light
-        change scattered pixels, not a patch. Then the head walks on along X
-        until the toolhead leaves the picture, and up and down Y likewise;
-        the middle of each stretch is the middle of the toolhead to within a
-        step. The toolhead is wider than the field at this height, so a
-        climb to where the most of it moves finds its middle. Both
-        nozzles are within half an offset of that. Returns the ring span to
-        search for the bore at the working height.
+        The work is in `search.BedSearch`, which does it in three named steps:
+        sight the toolhead, bracket it to find its middle, then close in on the
+        lens. Returns the ring span to search for the bore at the working height.
         """
-        cfg = self._cfg
-        x_min, x_max = float(cfg["bed_x_min"]), float(cfg["bed_x_max"])
-        y_min, y_max = float(cfg["bed_y_min"]), float(cfg["bed_y_max"])
-        feed = int(cfg["sweep_feedrate"])
-        threshold = float(cfg["motion_threshold"])
-        minimum = float(cfg["motion_min_blob"])
-        step = float(cfg["sweep_step_mm"])
-
-        def clamp(x, y):
-            return min(max(x, x_min), x_max), min(max(y, y_min), y_max)
-
-        def nudge_at(x, y):
-            x, y = clamp(x, y)
-            self._check_abort()
-            self._move_absolute(x=x, y=y, feedrate=feed)
-            time.sleep(float(cfg["settle_s"]))
-            fraction = self._moved_fraction_after_nudge()
-            self._progress("bed", "X%.0f Y%.0f: %.0f%% of the texture moved" % (x, y, fraction * 100),
-                           x=x, y=y, moved=fraction)
-            return fraction
-
-        # -- sighting: a rectangle growing out from the middle of the bed --------
-        # The camera is usually put down near the middle, so the search starts
-        # there and grows outward. Frames can only be compared along X within
-        # one row, because a Y move carries the camera with the bed and changes
-        # everything, so each ring scans its two new rows along X and extends
-        # every older row by one column each side, comparing the new frame
-        # with the one kept at that row's edge.
-        height = float(cfg["search_z"])
-        self._move_z(height)
-        row_gap = float(cfg["bed_row_mm"])
-        cx = (x_min + x_max) / 2.0
-        cy = (y_min + y_max) / 2.0
-        self._progress("bed", "searching for the camera from the middle of the bed outwards at Z%.0f" % height)
-        edges = {}       # (x, y) -> frame at a scanned edge of a row
-
-        def sweep_row(y, x_from, x_to):
-            """Move along the row in one go, watching for the toolhead.
-
-            Frames are taken while the head moves, and each is compared with
-            the one before. The first pair that differs by one big patch of
-            texture puts the toolhead in view; where the head was then is
-            read from the clock and the feedrate, good to a step or so, and
-            the nudge that follows confirms it.
-            """
-            self._check_abort()
-            self._move_absolute(x=x_from, y=y, feedrate=feed)
-            time.sleep(float(cfg["settle_s"]))
-            self._frame_quick()
-            previous = self._frame_now()
-            speed = float(cfg["sweep_feedrate"]) / 60.0
-            distance = abs(x_to - x_from)
-            direction = 1.0 if x_to > x_from else -1.0
-            self._bridge.send(["G90", "G1 X%.4f F%d" % (x_to, int(cfg["sweep_feedrate"]))])
-            started = time.time()
-            hit = None
-            while time.time() - started < distance / speed + float(cfg["sweep_overrun_s"]):
-                self._check_abort()
-                frame = self._frame_now()
-                now = time.time() - started
-                if hit is None and vision.motion_blob(previous, frame, threshold) >= minimum:
-                    hit = x_from + direction * min(distance, speed * max(0.0, now - float(cfg["sweep_lag_s"])))
-                previous = frame
-            self._bridge.run([], timeout=float(cfg["move_timeout"]))
-            return hit
-
-        def look(x, y, compare):
-            """Move, take a frame, and say whether the texture changed since ``compare``."""
-            self._check_abort()
-            self._move_absolute(x=x, y=y, feedrate=feed)
-            frame = self._frame_quick()
-            # The toolhead 20 mm further on is one big patch of moved texture.
-            # The cable chain and the light are scattered pixels and are not.
-            changed = compare is not None and \
-                vision.motion_blob(compare, frame, threshold) >= minimum
-            return frame, changed
-
-        def confirmed(x, y, fraction_hint):
-            self._progress("bed", "something changed at X%.0f Y%.0f; checking" % (x, y), x=x, y=y)
-            if nudge_at(x, y) >= minimum:
-                return True
-            return False
-
-        sighting = None
-        ring = 0
-        while sighting is None:
-            half_x, half_y = ring * step, ring * row_gap
-            xs = [x for x in (cx + i * step for i in range(-ring, ring + 1)) if x_min - 1e-6 <= x <= x_max + 1e-6]
-            ys = [y for y in (cy + j * row_gap for j in range(-ring, ring + 1)) if y_min - 1e-6 <= y <= y_max + 1e-6]
-            if ring > 0 and cx - half_x < x_min - 1e-6 and cx + half_x > x_max + 1e-6 \
-                    and cy - half_y < y_min - 1e-6 and cy + half_y > y_max + 1e-6:
-                break
-            new_rows = [y for y in (cy - half_y, cy + half_y) if y in ys] if ring > 0 else [cy]
-            old_rows = [y for y in ys if y not in new_rows]
-            new_columns = [x for x in (cx - half_x, cx + half_x) if x in xs] if ring > 0 else []
-            # the new rows, scanned along X in one move each
-            for index, y in enumerate(dict.fromkeys(new_rows)):
-                order = xs if index % 2 == 0 else xs[::-1]
-                if len(order) > 1:
-                    hit = sweep_row(y, order[0], order[-1])
-                    if hit is not None:
-                        near_x = min(xs, key=lambda x: abs(x - hit))
-                        for x in (near_x, near_x - step, near_x + step):
-                            if x_min - 1e-6 <= x <= x_max + 1e-6 and confirmed(x, y, None):
-                                sighting = (x, y, 1 if order is xs else -1)
-                                break
-                    if sighting is not None:
-                        break
-                    for x in (xs[0], xs[-1]):
-                        self._move_absolute(x=x, y=y, feedrate=feed)
-                        edges[(x, y)] = self._frame_quick()
-                else:
-                    self._move_absolute(x=order[0], y=y, feedrate=feed)
-                    edges[(order[0], y)] = self._frame_quick()
-                if sighting is not None:
-                    break
-            if sighting is not None or ring == 0:
-                if sighting is None and ring == 0:
-                    ring += 1
-                    continue
-                break
-            # the older rows, extended by the new columns
-            for x in dict.fromkeys(new_columns):
-                inner = x + step if x < cx else x - step
-                direction = -1 if x < cx else 1
-                for y in old_rows:
-                    compare = edges.get((inner, y))
-                    frame, changed = look(x, y, compare)
-                    edges[(x, y)] = frame
-                    if changed and confirmed(x, y, None):
-                        sighting = (x, y, direction)
-                        break
-                if sighting is not None:
-                    break
-            for key in list(edges):
-                if key[0] not in (xs[0], xs[-1]):
-                    del edges[key]
-            ring += 1
-        if sighting is None:
-            raise CalibrationError(
-                "the toolhead never came into view over the bed; is the camera "
-                "plugged in and pointing up?")
-
-        # -- the middle of the toolhead, from where it leaves the picture -------
-        x, y, direction = sighting
-        last_x = x
-        probe = x + direction * step
-        while x_min <= probe <= x_max and nudge_at(probe, y) >= minimum:
-            last_x = probe
-            probe += direction * step
-        first_x = x
-        probe = x - direction * step
-        while x_min <= probe <= x_max and nudge_at(probe, y) >= minimum:
-            first_x = probe
-            probe -= direction * step
-        x_mid = (first_x + last_x) / 2.0
-        last_y = first_y = y
-        probe = y + step
-        while probe <= y_max and nudge_at(x_mid, probe) >= minimum:
-            last_y = probe
-            probe += step
-        probe = y - step
-        while probe >= y_min and nudge_at(x_mid, probe) >= minimum:
-            first_y = probe
-            probe -= step
-        y_mid = (first_y + last_y) / 2.0
-        self._progress("bed", "the toolhead is over the camera near X%.0f Y%.0f" % (x_mid, y_mid))
-
-        # -- close in: put the moving patch in the middle of the picture -------
-        # The fraction that moves is flat and noisy across X, because the
-        # toolhead is nearly as wide as the field, so it cannot place the
-        # toolhead in X. The patch's position in the picture can. A nudge
-        # gives the picture's direction and scale for machine X, and the
-        # offset of the patch from the picture's centre along that direction
-        # is how far to move. Two or three passes settle it.
-        self._move_absolute(x=x_mid, y=y_mid, feedrate=feed)
-        if abs(float(cfg["closein_z"]) - height) > 1e-6:
-            self._move_z(float(cfg["closein_z"]))
-        nudge = float(cfg["motion_nudge_mm"])
-        x_here = x_mid
-        for attempt in range(int(cfg["closein_max_steps"])):
-            self._check_abort()
-            time.sleep(float(cfg["settle_s"]))
-            before = self._frame_quick()
-            self._move_relative(dx=nudge)
-            time.sleep(float(cfg["settle_s"]))
-            after = self._frame_quick()
-            self._move_relative(dx=-nudge)
-            centroid, box, fraction = vision.moving_region(before, after, threshold)
-            if centroid is None or fraction < minimum:
-                raise CalibrationError(
-                    "the toolhead was seen at X%.0f Y%.0f and then lost" % (x_here, y_mid))
-            shift, response = vision.shift_in_box(before, after, box)
-            scale = float(np.hypot(*shift)) / nudge
-            if scale < float(cfg["closein_min_scale"]) or response < float(cfg["closein_min_response"]):
-                self._progress("bed", "cannot read the picture's X direction (%.1f px/mm, response %.2f); "
-                               "keeping X%.0f" % (scale, response, x_here))
-                break
-            unit = np.array(shift) / float(np.hypot(*shift))
-            centre_px = np.array([before.shape[1] / 2.0, before.shape[0] / 2.0])
-            offset_mm = float((np.array(centroid) - centre_px) @ unit) / scale
-            self._progress("bed", "the toolhead is %.1f mm along X from the lens (%.1f px/mm, %.0f%% in view)"
-                           % (offset_mm, scale, fraction * 100), offset=offset_mm, px_per_mm=scale)
-            if abs(offset_mm) < float(cfg["closein_done_mm"]):
-                break
-            step_mm = max(-float(cfg["closein_max_move_mm"]), min(float(cfg["closein_max_move_mm"]), -offset_mm))
-            x_here = min(max(x_here + step_mm, x_min), x_max)
-            self._move_absolute(x=x_here, feedrate=feed)
-        centre = (x_here, y_mid)
-        self._progress("bed", "the middle of the toolhead is at X%.0f Y%.0f" % centre)
-        # T0's active nozzle sits half an offset towards minus X from the
-        # middle, and T1's raised one the other way. Starting the ring at
-        # T0's side puts the active nozzle first in line.
-        self._arrive(centre[0] - float(cfg["nominal_offset_x"]) / 2.0, centre[1])
-        self._move_z(float(cfg["camera_z"]))
-        time.sleep(float(cfg["settle_s"]))
-        self._forget()
-        return float(cfg["bed_search_span_mm"])
+        try:
+            return search.BedSearch(_SearchMachine(self), self._cfg,
+                                    self._progress).run()
+        except search.SearchError as exception:
+            raise CalibrationError(str(exception))
 
     def _bore_candidates(self, span):
         """Bores found around the current point at the working height.
@@ -838,6 +658,3 @@ def corrected_offset(stored, position_0, position_1):
     )
 
 
-def offset_command(tool, x, y):
-    """Re-exported for the API layer."""
-    return format_offset_command(tool, x, y)

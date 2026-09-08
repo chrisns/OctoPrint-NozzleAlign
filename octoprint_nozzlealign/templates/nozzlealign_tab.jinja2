@@ -17,6 +17,13 @@
 
     <div class="span5">
       <h4>Calibrate</h4>
+      <div class="alert alert-error">
+        <strong>This drives the toolhead down towards the camera.</strong>
+        Put the camera on the bed with its lens up, clear of clips and clamps, and
+        make sure the search area in the settings fits your bed. Stop the run if
+        anything looks wrong. The nozzle never goes below the floor set in the
+        settings.
+      </div>
       <p class="muted">
         Put the camera anywhere on the bed, lens up. The run homes, sweeps
         the bed at Z90 until the toolhead comes into the picture, closes in
@@ -26,9 +33,10 @@
         that the nozzle it measures is the active one.
       </p>
       <p data-bind="text: cameraText, visible: cameraText" class="text-success"></p>
-      <div class="btn-group">
+      <p class="text-error" data-bind="text: readyText, visible: readyText"></p>
+      <div class="btn-group" data-bind="visible: canCalibrate">
         <button class="btn btn-primary" data-bind="click: run,
-                enable: !running()">Calibrate</button>
+                enable: !running() &amp;&amp; isReady()">Calibrate</button>
         <button class="btn btn-danger" data-bind="click: abort,
                 enable: running">Stop</button>
       </div>
@@ -57,9 +65,9 @@
         Write the offset, then calibrate again. The second run must report
         nozzle 1 landing within a few microns of nozzle 0.
       </p>
-      <div class="btn-group">
+      <div class="btn-group" data-bind="visible: canCalibrate">
         <button class="btn btn-primary" data-bind="click: applyNew, text: applyLabel,
-                enable: !writing()"></button>
+                enable: !writing() &amp;&amp; isReady()"></button>
       </div>
       <p data-bind="text: writeStatus, visible: writeStatus,
                     css: {'text-success': writeOk, 'text-error': !writeOk()}"></p>
