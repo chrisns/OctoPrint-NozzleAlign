@@ -218,6 +218,25 @@ $(function () {
             });
         };
 
+        // OctoPrint's own tab markup ignores the `icon` key in get_template_configs,
+        // so the icon has to be put in by hand. The classes match the ones UI
+        // Customizer uses on the built-in tabs, so this tab looks like the others
+        // whether or not that plugin is installed. It only adds an icon when the
+        // link has none, so nothing doubles up.
+        self.addTabIcon = function () {
+            var link = document.querySelector("#tab_plugin_nozzlealign_link a");
+            if (!link || link.querySelector("i")) return;
+            var icon = document.createElement("i");
+            icon.className = "UICPadRight hidden-tablet fas fa-crosshairs";
+            link.insertBefore(icon, link.firstChild);
+        };
+
+        self.onAllBound = function () {
+            self.addTabIcon();
+            // Again a moment later, in case another plugin rebuilds the tab bar.
+            setTimeout(self.addTabIcon, 500);
+        };
+
         self.onTabChange = function (current) {
             if (current === "#tab_plugin_nozzlealign") self.checkCamera();
             if (current !== "#tab_plugin_nozzlealign" && self.live()) {

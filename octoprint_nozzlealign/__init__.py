@@ -144,7 +144,7 @@ class NozzleAlignPlugin(
     def get_template_configs(self):
         return [
             dict(type="tab", name="Nozzle Align", template="nozzlealign_tab.jinja2",
-                 custom_bindings=True),
+                 custom_bindings=True, icon="fas fa-crosshairs"),
             # False on purpose. The settings pane binds straight through
             # OctoPrint's own settings view model, so
             # `settings.plugins.nozzlealign.<key>` resolves. With custom bindings
